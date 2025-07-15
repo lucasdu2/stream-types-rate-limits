@@ -1,0 +1,4 @@
+(executable
+ (public_name rlsub-proto1)
+ (name main)
+ (libraries rlsub_proto1))

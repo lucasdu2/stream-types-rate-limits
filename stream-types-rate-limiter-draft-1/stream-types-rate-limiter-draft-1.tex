@@ -1,0 +1,175 @@
+\documentclass[acmsmall,nonacm,screen]{acmart}
+%% Extra classes and definitions here
+\usepackage{mathpartir}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+%% rate refinement formatting macro
+\newcommand{\rr}[3] {
+  {#1}_{\mathsf{@{#2}/{#3}}}
+}
+%% segmented rate refinement formatting macro
+\newcommand{\rrseg}[3] {
+    {#1}_{|\mathsf{@{#2}/{#3}}|}
+}
+
+\newcommand{\subtype}{\mathrel{<:}}
+\newcommand{\ceil}[1]{\lceil {#1} \rceil}
+\newcommand{\floor}[1]{\lfloor {#1} \rfloor}
+\newcommand{\todo}[1]{\textcolor{red}{\textbf{\texttt{TODO:}} {#1}}}
+
+% \citestyle{acmauthoryear} % Remove for [n]-style cites
+
+\title{Rate Limit Refinements on Stream Types}
+\author{Lucas Du}
+\email{lzdu@ucdavis.edu}
+\affiliation{
+  \institution{University of California, Davis}
+  \country{USA}
+}
+\author{Caleb Stanford}
+\email{cdstanford@ucdavis.edu}
+\affiliation{
+  \institution{University of California, Davis}
+  \country{USA}
+}
+
+\thanks{\today}
+
+\begin{document}
+
+\begin{abstract}
+  \section*{Abstract}
+\end{abstract}
+
+\maketitle
+
+%% Your stuff here
+\section{Introduction}
+
+\section{Rate Limiters in the Real World}
+There are a number of well-understood algorithms that are used in practice to implement rate limiters. These implementation strategies can broadly be categorized as either A) ``window''-based or B) ``bucket''-based. Furthermore, each of these strategies guarantees a particular \textit{event\footnote{In different contexts, the measure of data being rate limited might be ``events'', ``requests'', bits in incoming packets, and so on. Each of these has a slightly different connotation, but they all ultimately serve the same purpose: to act as a consistent unit of measure. We will use the term ``events'' for simplicity and consistency.} distribution} (or \textit{traffic shape}, from the networks literature).
+
+In this section, we briefly survey different kinds of real-world rate limiter implementations and discuss the event distributions they impose. We then classify these event distributions, grouping specific implementations by core commonalities, and use this classification to inform the design of our type system.
+
+\subsection{Rate Limiter Implementation}
+Rate limiter implementation broadly falls into four categories: (1) fixed window, (2) sliding window, (3) token bucket, and (4) leaky bucket. Here, we briefly outline the details of their implementation necessary to understand their corresponding event distributions. We also briefly discuss some of their practical benefits and drawbacks.
+
+\subsubsection{Fixed Window}
+In a fixed window implementation, time is divided into fixed windows (hence the name) and limits are enforced within those fixed windows using a counter that is reset at the end of every window.
+
+Fixed window implementations are usually very efficient, since they only require a single counter to be incremented and checked. However, they are vulnerable to bursts of traffic, particularly at window edges. For example, if we enforce a rate limit of 10 requests per minute using a fixed window approach, 10 requests could come in at the very end of one window and 10 more could come in at the start of the next window—we have now allowed 20 requests in a very short span of time, possibly overwhelming our system.
+
+One common approach to alleviating this ``burstiness'' is to use multiple fixed window rate limits simultaneously, often by combining a limit with a large window and a limit with a smaller window. For example, we could combine our 10 requests per minute rate limit with a 3 requests per 5 seconds rate limit: the addition of the smaller window limit smooths out bursts that were previously possible (i.e. around the edges of the 1 minute windows, we now only allow 6 requests instead of 20). See \hyperlink{section.3}{Section 3.5} for a discussion of how this can be handled by the type system.
+
+\subsubsection{Sliding Window}
+A sliding window implementation also enforces specific limits within windows, but instead of setting fixed windows, it uses a ``sliding'' window of size $t$ that moves with incoming events. For a sliding window of size 10 seconds, for example, we would take the number of events in the \textit{last} 10 seconds before the latest incoming event and check if the total is at our specified limit. If it is under the limit, we allow the latest event to pass through; otherwise, we reject the event.
+
+\subsubsection{Token Bucket}
+A token bucket algorithm (which is equivalent to a flipped version of the ``leaky bucket as a meter'' algorithm) rests on the notion of a bucket of some depth $d$ that is continuously being filled at some specified rate by tokens—the bucket cannot be filled past its maximum depth $d$ and tokens are consumed and removed from the bucket by incoming events. Incoming events are only passed through if there is a token to consume, i.e. if an event comes in and there are no tokens in the bucket, that event is rejected.
+
+This approach is able to handle bursts of traffic—the bucket acts as a buffer and the depth of the bucket is the maximum burst that is allowed—but the average rate of events is the same as the rate at which tokens are being refilled.
+
+\subsubsection{Leaky Bucket}
+The leaky bucket algorithm has two interpretations, largely due to historical accident: the ``leaky bucket as a meter'' interpretation and the ``leaky bucket as a queue'' interpretation.
+
+The ``as a meter'' interpretation is equivalent to the token bucket approach (more specifically, a flipped version of the token bucket: in the ``leaky bucket as a meter,'' incoming events are \textit{added} as tokens to the bucket rather than \textit{consumed} and the bucket is continuously being \textit{drained} at some specified rate instead of being \textit{filled}), so we focus here on the ``as a queue'' interpretation.
+
+In the ``leaky bucket as a queue,'' incoming events fill the bucket with tokens. If the bucket is full, incoming events are rejected. A ``leak'' in the bucket continuously drains the bucket at some specified rate, allowing events to pass through. This bucket here is essentially acting as a queue (hence the name) and the ``leak'' directly imposes a smooth rate limit: events can only pass through at the rate of the leak, so there are no bursts.
+
+\subsection{Classifying Event Distributions}
+We can broadly classify the types of event distributions these implementations impose into two semantically distinct classes: \textit{segmented} and \textit{uniform}. These are defined in terms of windows, but also map onto the kinds of distributions created by the ``bucket''-based algorithms.
+
+A \textit{segmented} distribution is one in which time is divided into fixed windows (of size $t$) and event counts are capped within each of those fixed windows. A \textit{uniform} distribution is one in which event counts are capped within \textit{for any} window of size $t$.
+
+Here is the mapping of rate limiting algorithms onto these classes of event distributions:
+\begin{itemize}
+  \item The fixed window algorithm creates a segmented distribution, essentially by definition.
+  \item The sliding window algorithm creates a uniform distribution, also essentially by definition. Specifically, the formulation of the algorithm enforces a limit of $n$ events over \textit{any} span of $t$ time.
+  \item The token bucket algorithm is a bit trickier, but it can be modeled as a uniform distribution. The trickiness arises due to the way that the token bucket allows bursts up to the depth $d$ of the bucket, but still imposes an \textit{average} rate that matches the rate of token replenishment. Still, we are imposing limits \textit{for any} window of $t$ time, not just fixed segments of time. \footnote{There is a temptation here to classify this as a semantically distinct third distribution class, i.e. a \textit{bursty} distribution. However, it is possible to precisely model this distribution as a uniform distribution—the intuition is essentially as described here, but the details will come in \hyperlink{section.3}{Section 3.6}}
+  \item The ``leaky bucket as a queue'' algorithm creates a uniform distribution. The rate limit corresponds to the rate of the ``leak,'' which applies \textit{for any} window of time. In fact, given a leak rate $n/t$, the leaky bucket (as a queue) algorithm guarantees that the rate is either \textit{exactly} $n/t$ for any window of size $t$ or simply $0$.
+\end{itemize}
+
+\section{Subtyping Rules}
+\subsection{Basic Rules}
+\textsc{s-rate} is the rule for subtyping between stream types with rate limit refinements and underlying ``bare'' stream types. \textsc{s-relative-rate} is the rule for subtyping between two stream types with rate limit refinements with equal time windows. Note that these hold for both uniform and segmented rate distributions; for simplicity, we just use the uniform rate notation. For completeness, we also list out the basic structural subtyping rules for each type constructor.
+\begin{mathpar}
+  \inferrule [s-rate]{ }{\rr{S}{n}{t} \subtype S} \and
+  \inferrule [s-relative-rate]{n \leq m}{\rr{S}{n}{t} \subtype \rr{S}{m}{t}} \\
+  \inferrule [s-concat]{S_1 \subtype S_2 \\ T_1 \subtype T_2}{S_1 \bullet T_1 \subtype S_2 \bullet T_2} \and
+  \inferrule [s-sum]{S_1 \subtype S_2 \\ T_1 \subtype T_2}{S_1 + T_1 \subtype S_2 + T_2} \and
+  \inferrule [s-par]{S_1 \subtype S_2 \\ T_1 \subtype T_2}{S_1 \parallel T_1 \subtype S_2 \parallel T_2} \and
+  \inferrule [s-star]{S \subtype T}{S^* \subtype T^*}
+\end{mathpar}
+\subsection{Uniform Distributions}
+\begin{mathpar}
+  \inferrule [s-uniform-concat-expand]{ }{\rr{(S \bullet T)}{n}{t} \subtype \rr{S}{n}{t} \bullet \rr{T}{n}{t}} \and
+  \inferrule [s-uniform-concat-factor]{ }{\rr{S}{n_1}{t} \bullet \rr{T}{n_2}{t} \subtype \rr{(S \bullet T)}{(n_1+n_2)}{t}} \and
+  \inferrule [s-uniform-sum-expand]{ }{\rr{(S+T)}{n}{t} \subtype \rr{S}{n}{t} + \rr{T}{n}{t}} \and
+  \inferrule [s-uniform-sum-factor]{ }{\rr{S}{n_1}{t} + \rr{T}{n_2}{t} \subtype \rr{(S+T)}{\max(n_1, n_2)}{t}} \and
+  \inferrule [s-uniform-par-expand]{ }{\rr{(S \parallel T)}{n}{t} \subtype \rr{S}{n}{t} \parallel \rr{T}{n}{t}} \and
+  \inferrule [s-uniform-par-factor]{ }{\rr{S}{n_1}{t} \parallel \rr{T}{n_2}{t} \subtype \rr{(S \parallel T)}{n_1+n_2}{t}} \\
+  \inferrule [s-uniform-star-expand]{ }{\rr{(S^*)}{n}{t} \subtype (\rr{S}{n}{t})^*} \and
+  \inferrule [s-uniform-star-factor]{ }{(\rr{S}{n}{t})^* \subtype \rr{(S^*)}{2n}{t}}
+\end{mathpar}
+As a note, \textsc{s-uniform-star-factor} requires a semantic property of the \textit{length} of streams $\rr{S}{n}{t}$ to hold: such streams \textit{must complete a window} (of length $t$). More concretely, the length of such a stream must be $\geq t$.
+
+\subsection{Segmented Distributions}
+\begin{mathpar}
+  \inferrule [s-segment-concat-expand]{ }{\rrseg{(S \bullet T)}{n}{t} \subtype \rrseg{S}{n}{t} \bullet \rrseg{T}{2n}{t}} \and
+  \inferrule [s-segment-concat-factor]{ }{\rrseg{S}{n_1}{t} \bullet \rrseg{T}{n_2}{t} \subtype \rrseg{(S \bullet T)}{\max(n_1+n_2, 2n_2)}{t}} \\
+  \inferrule [s-segment-sum-expand]{ }{\rrseg{(S+T)}{n}{t} \subtype \rrseg{S}{n}{t} + \rrseg{T}{n}{t}} \and
+  \inferrule [s-segment-sum-factor]{ }{\rrseg{S}{n_1}{t} + \rrseg{S}{n_2}{t} \subtype \rrseg{(S+T)}{\max(n_1, n_2)}{t}} \\
+  \inferrule [s-segment-par-expand]{ }{\rrseg{(S \parallel T)}{n}{t} \subtype \rrseg{S}{n}{t} \parallel \rrseg{T}{n}{t}} \\
+  \inferrule [s-segment-par-factor-1]{(S \parallel T)\ \text{align}\ S\ \text{align}\ T}{\rrseg{S}{n_1}{t} \parallel \rrseg{T}{n_2}{t} \subtype \rrseg{(S \parallel T)}{(n_1+n_2)}{t}} \and
+  \inferrule [s-segment-par-factor-2]{(S \parallel T)\ \text{align}\ S}{\rrseg{S}{n_1}{t} \parallel \rrseg{T}{n_2}{t} \subtype \rrseg{(S \parallel T)}{(n_1+2n_2)}{t}} \and
+  \inferrule [s-segment-par-factor-2]{(S \parallel T)\ \text{align}\ T}{\rrseg{S}{n_1}{t} \parallel \rrseg{T}{n_2}{t} \subtype \rrseg{(S \parallel T)}{(2n_1+n_2)}{t}} \\
+  \inferrule [s-segment-star-expand]{ }{\rrseg{(S^*)}{n}{t} \subtype (\rrseg{S}{2n}{t})^*} \and
+  \inferrule [s-segment-star-factor]{ }{(\rrseg{S}{n}{t})^* \subtype \rrseg{(S^*)}{2n}{t}}
+\end{mathpar}
+In \textsc{s-segment-star-expand}, the factor of 2 in the supertype comes from the fact that a window of a substream type $S$ in the supertype can overlap at most 2 windows of stream type $S^*$ in the subtype. Thus, to enforce subset semantics, we must allow up to $2n$ events in a window for substream type $S$.
+
+As in the uniform version of these rules, \textsc{s-segment-star-factor} depends on the requirement that a stream of type $\rr{S}{n}{t}$ \textit{must complete a window}: in other words, the length of such a stream must be $\geq t$. This guarantees that there will never be more than 2 windows of the substream type $S$ in the subtype overlapping a window of stream type $S^*$ in the supertype.
+\subsection{Conversions Between Distributions}
+\begin{mathpar}
+  \inferrule [s-segment-of-uniform]{ }{\rr{S}{n}{t} \subtype \rrseg{S}{n}{t}} \and
+  \inferrule [s-uniform-of-segment]{ }{\rrseg{S}{n}{t} \subtype \rr{S}{2n}{t}}
+\end{mathpar}
+\subsection{Different Window Sizes}
+So far, we have only considered subtyping relations between refinements where event counts change, but the window size $t$ remains the same. What happens to subtyping relations if we allow the window sizes to be different? There are two cases: either the subtype has a larger window size or a smaller one.
+
+First, we lay out the rules when the subtype has a larger window size.
+\begin{mathpar}
+  \inferrule [s-uniform-subwindow-larger]{t_2 \leq t_1}{\rr{S}{n}{t_1} \subtype \rr{S}{n}{t_2}} \\
+  \inferrule [s-segment-subwindow-larger-divisible]{t_2 \leq t_1 \\ t_1/t_2 \in \mathbb{N}}{\rrseg{S}{n}{t_1} \subtype \rrseg{S}{n}{t_2}} \and
+  \inferrule [s-segment-subwindow-larger]{t_2 \leq t_1}{\rrseg{S}{n}{t_1} \subtype \rrseg{S}{2n}{t_2}}
+\end{mathpar}
+Next, we lay out the rules when the subtype has a smaller window size. To make these work, we need to impose more nuanced constraints on the relative event counts in a way that corresponds to the relative window sizes.
+\begin{mathpar}
+  \inferrule [s-uniform-subwindow-smaller]{t_1 \leq t_2 \\ n_1 \leq n_2/(\ceil{t_2/t_1})}{\rr{S}{n_1}{t_1} \subtype \rr{S}{n_2}{t_2}} \\
+  \inferrule [s-segment-subwindow-smaller-1]{t_1 \leq t_2 \\ (t_2 - (\floor{t_2/t_1} \cdot t_1)) \leq g \\ n_1 \leq n_2/(\ceil{t_2/t_1})}{\rr{S}{n_1}{t_1} \subtype \rrseg{S}{n_2}{t_2}} \and
+  \inferrule [s-segment-subwindow-smaller-2]{t_1 \leq t_2 \\ (t_2 - (\floor{t_2/t_1} \cdot t_1)) > g \\ n_1 \leq n_2/(\ceil{t_2/t_1}+1)}{\rr{S}{n_1}{t_1} \subtype \rrseg{S}{n_2}{t_2}}
+\end{mathpar}
+In the segmented rules, $g$ represents the \textit{greatest common time granularity} of $t_1$ and $t_2$. For example, if $t_1$ is 2 second and $t_2$ is 5 seconds, $g$ would be $1$ second; if $t_1$ is 0.3 seconds and $t_2$ is 4 seconds, $g$ would be 0.1 seconds; if $t_1$ is 3 seconds and $t_2$ is 4.55 seconds, $g$ would be 0.01 seconds.
+
+\subsection{Modeling Bursty Distributions}
+We can model \textit{bursty} distributions (of the kind produced by token bucket limiters) precisely as uniform distributions. Specifically, the bursty distribution allows a maximum burst of $d$ events (where $d$ is the depth of the bucket), but otherwise enforces a rate of $n/t$ ($n$ events per $t$ time). \todo{Figure out the details here.}
+
+\subsection{Refinement Casting and Multiple Refinements}
+We can also apply multiple rate limit refinements to a stream type. \todo{There are two approaches to this—the simplest is to treat this as a \textit{cast} and simply take the strongest refinement (as given by the subtyping rules) as the refinement. However, this leaves two problems:
+  \begin{enumerate}
+  \item What do we do if there is no subtyping relation between all of the refinements applied? If we treat multiple refinements as a cast, the simplest answer seems to be to just disallow these kinds of refinements.
+  \item There may be use in allowing \textit{conjunctions} of refinements (even ones that have no subtyping relationship), so erasing that information may be problematic. For example, a common strategy to control burstiness when using fixed window rate limiting is to have a have 2 limits, i.e. 10 events per 1 minute, then a burstiness control limit of 2 events per 1 second. There is no subtyping relationship here (at least given our current rules), but this should still be allowed as it expresses an important constraint.
+  \end{enumerate}}
+
+\todo{We also need to try and get \textbf{more precise constraints} on currently problematic types like (a) ``bursty'' streams and (b) the forced $n_1+n_2$ or $2n$ things to handle crossover points in concatenated/star streams.
+  \begin{itemize}
+  \item It seems like using larger window sizes can help us get a handle on ``bursty streams'' produced by token bucket or ``leaky bucket as meter'' rate limiters (i.e. something like: if bucket depth is 10 and rate of replenishment is 2/1sec, instead of being forced to have a consistent uniform rate of (10+2)/1sec, we could instead have something like $(10+2\cdot 5 = 20)$/5sec...the math here needs to be worked out some more).
+  \item It also seems possible that working out the mutliple refinements thing, which is ostensibly for modeling certain fixed window strategies, could also help give tighter bounds for both ``bursty'' streams and the annoying $n_1+n_2$ sort of things.
+  \end{itemize}}
+
+
+% Uncomment for bibliography
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{main}
+\end{document}
