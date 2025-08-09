@@ -116,6 +116,8 @@ Here is the mapping of rate limiting algorithms onto these classes of event dist
 \end{mathpar}
 As a note, \textsc{s-uniform-star-factor} requires a semantic property of the \textit{length} of streams $\rr{S}{n}{t}$ to hold: such streams \textit{must complete a window} (of length $t$). More concretely, the length of such a stream must be $\geq t$.
 
+\note{I think concatenation also needs this ``complete window'' requirement, since concatenations can be composed multiple times and thus suffers the same problem as star/iteration in terms of not knowing how many different streams could be in one crosssover period.}
+
 \note{I think to really get this to be useful as a typechecker, we also need to have some typing rules convert between type constructors. To do this, I believe we need some base type like Int. Particularly, I think the simplest/most naive solution here (just so we can get a basic subtyping checker to work) is to have rules that have Int as a subtype of all Stream Types constructors, i.e. Int@(r0) is subtype of Concat(Int@r1, Int@r2) when r0 is ``less than'' (i.e. is a subtype of) r1, r2 in the rate refinement typing lattice. This could probably be made more general, actually, but I'm just going to think of things onlly as Ints for now. I think the rules for the other constructors fairly straightforward, i.e. for Sum, it's just the lesser of the two types being summed, and for Par it's just the sum of the two types. Not sure if all of this will scale when we have more types that possibly aren't compatible, but we'll see. We'll also see if this makes sense later on, or if it just seems like I'm rambling.}
 }
 
@@ -157,6 +159,8 @@ Next, we lay out the rules when the subtype has a smaller window size. To make t
 \end{mathpar}
 In the segmented rules, $g$ represents the \textit{greatest common time granularity} of $t_1$ and $t_2$. For example, if $t_1$ is 2 second and $t_2$ is 5 seconds, $g$ would be $1$ second; if $t_1$ is 0.3 seconds and $t_2$ is 4 seconds, $g$ would be 0.1 seconds; if $t_1$ is 3 seconds and $t_2$ is 4.55 seconds, $g$ would be 0.01 seconds.
 
+\note{I actually think now that it's easier to think about all this if we \textit{combine} our reasoning about rate refinements into a single framework. Instead of thinking about what happens with same window size+different events and then thinking separately about different window sizes, we should just treat rate refinements as always possibly having different events \textit{and} window sizes and having rules that handle both simulateously. It probably makes things easier to understand and also makes implementing the subtyping checking more straightforward.}
+
 \subsection{Modeling Bursty Distributions}
 We can model \textit{bursty} distributions (of the kind produced by token bucket limiters) precisely as uniform distributions. Specifically, the bursty distribution allows a maximum burst of $d$ events (where $d$ is the depth of the bucket), but otherwise enforces a rate of $n/t$ ($n$ events per $t$ time). \todo{Figure out the details here.}
 
@@ -175,7 +179,9 @@ We can also apply multiple rate limit refinements to a stream type. \todo{There 
   \item It also seems possible that working out the multiple refinements thing, which is ostensibly for modeling certain fixed window strategies, could also help give tighter bounds for both ``bursty'' streams and the annoying $n_1+n_2$ sort of things.
   \end{itemize}}
 
-\note{I don't think multiple refinements in the way we are imagining them above (as logical conjunctions) will really help with the annoying addition stuff we need to do currently for concatenation (and relatedly, iteration). The main idea for this is basically to have two refinements: one with the larger (or smaller, depending on if we want a supertype or a subtype) and the other is the rate limit over the crossover windows, i.e. $(n_1 + n2)/(t_1 + t_2)$. Maybe this does work? It does seem to be a sound overapproximation (at least semantically) of the concatenated stream...and is a bit tighter than simply doing addition? I don't know; this deserves more thought. As does handling ``bursty streams.''}
+\note{I don't think multiple refinements in the way we are imagining them above (as logical conjunctions) will really help with the annoying addition stuff we need to do currently for concatenation (and relatedly, iteration). The main idea for this is basically to have two refinements: one with the larger (or smaller, depending on if we want a supertype or a subtype) and the other is the rate limit over the crossover windows, i.e. $(n_1 + n2)/(t_1 + t_2)$. Maybe this does work? It does seem to be a sound overapproximation (at least semantically) of the concatenated stream...and is a bit tighter than simply doing addition? Also, if we use a unified framework for rate refinements (combining different event numbers \textit{and} window sizes), then this actually seems like the only reasonable way forward. I don't know; this deserves more thought. As does handling ``bursty streams.'' FWIW, the idea with fixing ``bursty streams'' with multiple refinements is similar.}
+
+\note{Also, for concatenated streams, it appears that we may need to extend the rate type refinement to 3 places. Specifically: \texttt{(entry refinement | min crossover | exit refinement)}. Otherwise, it seems that composition of concatenated types loses \textit{a lot} of precision, since we'll just keep on adding max rates together without any notion of what crossovers are actually possible. Hopefully this makes sense (and writing out an example should be illuminating).}
 
 % Uncomment for bibliography
 \bibliographystyle{ACM-Reference-Format}
