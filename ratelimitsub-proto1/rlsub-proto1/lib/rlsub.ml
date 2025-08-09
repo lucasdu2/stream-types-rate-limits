@@ -13,7 +13,7 @@ type typ =
 
 (* =========================   SUBTYPING   ================================== *)
 (* NOTE: For now (out of naivete), we simply define a normalized type as one in
- which the only refinements are directly attached to the base type Int. *)e
+ which the only refinements are directly attached to the base type Int. *)
 
 (* NOTE: Determine if r1 is a subtype of r2, in a unified way (i.e. both event
    counts and window size can be different). *)
@@ -28,8 +28,14 @@ let uniform_rate_sub (r1: rate) (r2: rate) : bool =
 
 let uniform_rr_sub (rr1: rr) (rr2: rr) : bool = (rr1 = rr2) (* TODO *)
 
-let uniform_rr_add (rr1: rr) (rr2: rr) : rr =
-
+let uniform_rr_add (rr1: rr) (_rr2: rr) : rr = rr1 (* TODO: This should find
+                                                      the "parallel" sum of the
+                                                      two rate refinements. In
+                                                      more specific terms, we
+                                                      should find the LCM of the
+                                                      window sizes, convert them
+                                                      both to that LCM, then sum.
+                                                      This gives us a supertype. *)
 
 (* TODO: Should we have functions here to produce the meet (lub) and join (glb)
    of two rate refinements, for use in subtyping? *)
@@ -105,3 +111,8 @@ let rec check_subtype (s1: typ) (s2: typ) =
      (* TODO: We can "add" the rates of s1 and s2 to get the Par rate, but this
         ends up being a supertype of TypPar(s1, s2, []). So I don't think we can
         get a subtype relation out of this... *)
+     (* TODO: It seems like the push inwards, then outwards strategy may be the
+        right one. Specifically, we first "normalize" by pushing inward as much
+        as we can. Then, if our subtyping gets stuck at any point due to mismatched
+        constructors, for example, we then try to push the refinements outwards
+        again to get to some other types that *are comparable*. *)
