@@ -17,6 +17,7 @@
 \newcommand{\ceil}[1]{\lceil {#1} \rceil}
 \newcommand{\floor}[1]{\lfloor {#1} \rfloor}
 \newcommand{\todo}[1]{\textcolor{red}{\textbf{\texttt{TODO:}} {#1}}}
+\newcommand{\note}[1]{\textcolor{blue}{\textbf{\texttt{NOTE:}} {#1}}}
 
 % \citestyle{acmauthoryear} % Remove for [n]-style cites
 
@@ -101,6 +102,7 @@ Here is the mapping of rate limiting algorithms onto these classes of event dist
   \inferrule [s-par]{S_1 \subtype S_2 \\ T_1 \subtype T_2}{S_1 \parallel T_1 \subtype S_2 \parallel T_2} \and
   \inferrule [s-star]{S \subtype T}{S^* \subtype T^*}
 \end{mathpar}
+\note{I think the \textsc{s-concat} rule might be messed up. To guarantee semantic safety (yet to be proven, of course), we might need it to replace the $S_2$ and $T_2$ supertypes in the premise with some $U=\textsf{glb}(S_2, T_2)$.}
 \subsection{Uniform Distributions}
 \begin{mathpar}
   \inferrule [s-uniform-concat-expand]{ }{\rr{(S \bullet T)}{n}{t} \subtype \rr{S}{n}{t} \bullet \rr{T}{n}{t}} \and
@@ -113,6 +115,9 @@ Here is the mapping of rate limiting algorithms onto these classes of event dist
   \inferrule [s-uniform-star-factor]{ }{(\rr{S}{n}{t})^* \subtype \rr{(S^*)}{2n}{t}}
 \end{mathpar}
 As a note, \textsc{s-uniform-star-factor} requires a semantic property of the \textit{length} of streams $\rr{S}{n}{t}$ to hold: such streams \textit{must complete a window} (of length $t$). More concretely, the length of such a stream must be $\geq t$.
+
+\note{I think to really get this to be useful as a typechecker, we also need to have some typing rules convert between type constructors. To do this, I believe we need some base type like Int. Particularly, I think the simplest/most naive solution here (just so we can get a basic subtyping checker to work) is to have rules that have Int as a subtype of all Stream Types constructors, i.e. Int@(r0) is subtype of Concat(Int@r1, Int@r2) when r0 is ``less than'' (i.e. is a subtype of) r1, r2 in the rate refinement typing lattice. This could probably be made more general, actually, but I'm just going to think of things onlly as Ints for now. I think the rules for the other constructors fairly straightforward, i.e. for Sum, it's just the lesser of the two types being summed, and for Par it's just the sum of the two types. Not sure if all of this will scale when we have more types that possibly aren't compatible, but we'll see. We'll also see if this makes sense later on, or if it just seems like I'm rambling.}
+}
 
 \subsection{Segmented Distributions}
 \begin{mathpar}
@@ -162,12 +167,15 @@ We can also apply multiple rate limit refinements to a stream type. \todo{There 
   \item There may be use in allowing \textit{conjunctions} of refinements (even ones that have no subtyping relationship), so erasing that information may be problematic. For example, a common strategy to control burstiness when using fixed window rate limiting is to have a have 2 limits, i.e. 10 events per 1 minute, then a burstiness control limit of 2 events per 1 second. There is no subtyping relationship here (at least given our current rules), but this should still be allowed as it expresses an important constraint.
   \end{enumerate}}
 
+\note{I actually don't think these two interpretations of multiple rate refinements are contradictory. We can treat multiple refinements as logical conjunctions, and also erase a refinement if it is a supertype of an existing refinement on the stream type. The erasure of the supertype is not at odds with the semantics of logical conjunction and the implication relation that corresponds to subtyping; intuitively, if we already have the stronger version of some logical predicate, we don't need the weaker version in order to get the same power of implication.}
+
 \todo{We also need to try and get \textbf{more precise constraints} on currently problematic types like (a) ``bursty'' streams and (b) the forced $n_1+n_2$ or $2n$ things to handle crossover points in concatenated/star streams.
   \begin{itemize}
   \item It seems like using larger window sizes can help us get a handle on ``bursty streams'' produced by token bucket or ``leaky bucket as meter'' rate limiters (i.e. something like: if bucket depth is 10 and rate of replenishment is 2/1sec, instead of being forced to have a consistent uniform rate of (10+2)/1sec, we could instead have something like $(10+2\cdot 5 = 20)$/5sec...the math here needs to be worked out some more).
-  \item It also seems possible that working out the mutliple refinements thing, which is ostensibly for modeling certain fixed window strategies, could also help give tighter bounds for both ``bursty'' streams and the annoying $n_1+n_2$ sort of things.
+  \item It also seems possible that working out the multiple refinements thing, which is ostensibly for modeling certain fixed window strategies, could also help give tighter bounds for both ``bursty'' streams and the annoying $n_1+n_2$ sort of things.
   \end{itemize}}
 
+\note{I don't think multiple refinements in the way we are imagining them above (as logical conjunctions) will really help with the annoying addition stuff we need to do currently for concatenation (and relatedly, iteration). The main idea for this is basically to have two refinements: one with the larger (or smaller, depending on if we want a supertype or a subtype) and the other is the rate limit over the crossover windows, i.e. $(n_1 + n2)/(t_1 + t_2)$. Maybe this does work? It does seem to be a sound overapproximation (at least semantically) of the concatenated stream...and is a bit tighter than simply doing addition? I don't know; this deserves more thought. As does handling ``bursty streams.''}
 
 % Uncomment for bibliography
 \bibliographystyle{ACM-Reference-Format}
