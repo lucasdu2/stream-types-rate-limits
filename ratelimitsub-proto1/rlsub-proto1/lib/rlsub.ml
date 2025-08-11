@@ -26,16 +26,35 @@ let uniform_rate_sub (r1: rate) (r2: rate) : bool =
     (let bound = (n2 / ((t2 / t1) + 1)) in
      if n1 <= bound then true else false)
 
-let uniform_rr_sub (rr1: rr) (rr2: rr) : bool = (rr1 = rr2) (* TODO *)
+let uniform_rr_sub (rr1: rr) (rr2: rr) : bool =
+  (* NOTE: This is basically just implication checking using our individual
+     rate subtyping decision procedure above, where we use the interpretation:
+     subtype implies supertype. *)
+  let rec rr_impl_rate (rest: rr)(r: rate) : bool =
+    (match rest with
+     | [] -> false
+     | hd :: tl ->
+        (if (uniform_rate_sub hd r) then true else rr_impl_rate tl r)) in
+  let rec uniform_rr_sub_aux (remain_rr2: rr) : bool =
+    (match remain_rr2 with
+     | [] -> true
+     | hd :: tl ->
+        (if (rr_impl_rate rr1 hd) then uniform_rr_sub_aux tl else false)) in
+  uniform_rr_sub_aux rr2
 
-let uniform_rr_add (rr1: rr) (_rr2: rr) : rr = rr1 (* TODO: This should find
-                                                      the "parallel" sum of the
-                                                      two rate refinements. In
-                                                      more specific terms, we
-                                                      should find the LCM of the
-                                                      window sizes, convert them
-                                                      both to that LCM, then sum.
-                                                      This gives us a supertype. *)
+(* NOTE: We sometimes need to "add" rates in order to push them outwards (i.e.
+   our "factoring" subtyping rules). We provide two ways to do this on
+   arbitrary rates (even rates where window sizes don't match), one of which
+   gives us a subtype of the "real" result of the addition, the other of which
+   gives us a supertype. There is no formal proof that this is the greatest
+   subtype (glb) or the least supertype (lub), but I suspect it shouldn't be
+   hard to prove this, given our particular subtyping rules/semantics, of course.*)
+let uniform_rate_add_sup (rr1: rr) (_rr2: rr) : rr = rr1 (*TODO*)
+
+let uniform_rate_add_sub (rr1: rr) (_rr2: rr) : rr = rr1 (*TODO*)
+(* TODO: Is there a way to do this over entire rate refinements? When we have
+   two conjunctive clauses, the addition here seems non-deterministic, i.e.
+   which rates do we choose to add together? *)
 
 (* TODO: Should we have functions here to produce the meet (lub) and join (glb)
    of two rate refinements, for use in subtyping? *)
@@ -96,7 +115,7 @@ and reduce_star_sup (s: typ) (outer_r: rr) =
   (* NOTE: We do the same thing as concat for now, for the same reasons. *)
   TypStar(normalize_sup s, outer_r)
 
-let rec check_subtype (s1: typ) (s2: typ) =
+let rec check_subtype (s1: typ) (s2: typ) : bool =
   (* NOTE: We assume that both s1 and s2 are normalized here. If not, we will
      have to throw an error. *)
   (* NOTE: I guess we'll just individually handle each possible combination for
@@ -105,12 +124,32 @@ let rec check_subtype (s1: typ) (s2: typ) =
   | TypInt(rr1), TypInt(rr2) -> uniform_rr_sub rr1 rr2
   | TypSum(s1, s2, []), TypSum(s3, s4, []) ->
      ((check_subtype s1 s3) && (check_subtype s2 s4))
-  | TypInt(rr1), TypSum(s1, s2, []) ->
-     ((check_subtype (TypInt(rr1)) s1) && (check_subtype (TypInt(rr1)) s2))
-  | TypInt(rr1), TypPar(s1, s2, []) ->
-     (* TODO: We can "add" the rates of s1 and s2 to get the Par rate, but this
-        ends up being a supertype of TypPar(s1, s2, []). So I don't think we can
-        get a subtype relation out of this... *)
+  (* NOTE: In this case, this seems to be a pretty bad rule, since it's possible
+     that the two types on the LHS, when "summed," could still be a subtype of
+     the "summed" RHS. Should think about when and when not this sort of
+     "summing" thing could make sense. See the uniform_rr_add rule above. *)
+  | TypPar(s1, s2, []), TypPar(s3, s4, []) ->
+     ((check_subtype s1 s3) && (check_subtype s2 s4))
+  | TypConcat(s1, s2, rr1), TypConcat(s3, s4, rr2) ->
+     ((uniform_rr_sub rr1 rr2) && (check_subtype s1 s3) && (check_subtype s2 s4))
+  | TypStar(s1, rr1), TypStar(s2, rr2) ->
+     ((uniform_rr_sub rr1 rr2) && (check_subtype s1 s2))
+  | s0, TypSum(s1, s2, []) ->
+     ((check_subtype s0 s1) && (check_subtype s0 s2))
+  | s0, TypPar(s1, s2, []) ->
+     ((check_subtype s0 s1) || (check_subtype s0 s2))
+  | TypStar(s1, rr1), TypConcat(s2, s3, rr2) -> false (* TODO *)
+  | s0, TypConcat(s1, s2, rr1) -> false (* TODO *)
+  | TypConcat(s1, s2, rr1), TypStar(s3, rr2) -> false
+  | s0, TypStar(s1, rr1) -> false
+  | TypSum(s1, s2, []), s3 -> false
+  | TypPar(s1, s2, []), s3 -> false
+  | TypConcat(s1, s2, rr1), TypStar(s3, rr2) -> false
+  | TypConcat(s1, s2, rr1), s3 -> false
+  | TypStar(s1, rr1), TypConcat(s2, s3, rr2) -> false
+  | TypStar(s1, rr1), s3 -> false
+
+
      (* TODO: It seems like the push inwards, then outwards strategy may be the
         right one. Specifically, we first "normalize" by pushing inward as much
         as we can. Then, if our subtyping gets stuck at any point due to mismatched
