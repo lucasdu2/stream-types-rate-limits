@@ -1,10 +1,8 @@
 type rate = {events: int; window: int}
-(* TODO: We might want to add a Bot and Top type to this for the future. It
-   would help a bit with the fold_left stuff, for example, later on (to have a
-   Bot type in that case). *)
 (* NOTE: Yeah, we only handle Uniform rates for now :D *)
 (* NOTE: We represent the possibility of multiple refinements as a list. An
-   empty list means there are no rate limits. *)
+   empty list means there are no rate limits. In effect, an empty list is the
+   Top type. The Bot type can be expressed as [{events = 0; window = 1}].*)
 type rr = rate list
 (* NOTE: Not sure when I'll use this, but could be handy to have, since OCaml
    doesn't have a nat type. *)
@@ -96,7 +94,7 @@ let uniform_rate_add_sub (r1: rate) (r2: rate) : rate =
         {events = (n1 / ratio_ceil); window = t2}) in
      if uniform_rate_sub option1 option2 then option1 else option2)
 
-(* TODO: Is there a way to do this over entire rate refinements? When we have
+(* NOTE: Is there a way to do this over entire rate refinements? When we have
    two conjunctive clauses, the addition here seems non-deterministic, i.e.
    which rates do we choose to add together? Yes, just take the meet or join of
    each refinement and then use the corresponding add function (either add_sup
@@ -140,15 +138,44 @@ let uniform_rate_glb (r1: rate) (r2: rate) : rate =
         if convert_n1 < n1 then {events = convert_n1; window = t2}
         else {events = n2; window = t2}))
 
-let singleton_uniform_rr_lub (rrefine: rr) : rr =
-  assert (List.length rrefine >= 1);
-  List.fold_left uniform_rate_lub rrefine[0] rrefine
+let uniform_rr_lub_rate (rrefine: rr) : rate =
+  (* [requires] (List.length rrefine >= 1) *)
+  List.fold_left uniform_rate_lub (List.hd rrefine) rrefine
+let uniform_rr_glb_rate (rrefine: rr) : rate =
+  (* [requires] (List.length rrefine >= 1) *)
+  List.fold_left uniform_rate_glb (List.hd rrefine) rrefine
 
+(* NOTE: At the moment, for the additive supertype, we take the least upper
+   bounds of the two refinements (a single rate) and "add" them according to
+   our definition in uniform_rate_add_sup. Same for the additive subtype. *)
 let uniform_rr_add_sup (rr1: rr) (rr2: rr) : rr =
-let uniform_rr_add_sub (rr1: rr) (rr2: rr) :
+  match (rr1, rr2) with
+  (* [] is the Top type for rr. *)
+  | ([], _) | (_, []) -> []
+  | (rr1, rr2) ->
+     [uniform_rate_add_sup (uniform_rr_lub_rate rr1) (uniform_rr_lub_rate rr2)]
+let uniform_rr_add_sub (rr1: rr) (rr2: rr) : rr =
+  match (rr1, rr2) with
+  | ([], _) | (_, []) -> []
+  | (rr1, rr2) ->
+     [uniform_rate_add_sub (uniform_rr_glb_rate rr1) (uniform_rr_glb_rate rr2)]
 
-let uniform_rr_meet (rr1: rr) (_rr2: rr) : rr = rr1
-let uniform_rr_join (rr1: rr) (_rr2: rr) : rr = rr1
+(* NOTE: There may be a more fine-grained way to do this that doesn't require
+   us to compress each entire refinement into a single rate bound, but for now,
+   that's what we do. *)
+let uniform_rr_lub (rr1: rr) (rr2: rr) : rr =
+  match (rr1, rr2) with
+  (* We handle these [] cases to satisfy the precondition of
+     uniform_rr_lub_rate, which requires the input to be a nonempty list. *)
+  | ([], _) | (_, []) -> []
+  | (rr1, rr2) ->
+     [uniform_rate_lub (uniform_rr_lub_rate rr1) (uniform_rr_lub_rate rr2)]
+let uniform_rr_glb (rr1: rr) (rr2: rr) : rr =
+  match (rr1, rr2) with
+  (* Same as above. *)
+  | ([], rr) | (rr, []) -> rr
+  | (rr1, rr2) ->
+     [uniform_rate_glb (uniform_rr_glb_rate rr1) (uniform_rr_glb_rate rr2)]
 
 (* NOTE: We need to merge rate refinements somehow when doing normalization. *)
 let merge_rr (s: typ) (outer_r: rr) =
@@ -166,7 +193,6 @@ let merge_rr (s: typ) (outer_r: rr) =
   | TypPar(s1, s2, inner_r) -> TypPar(s1, s2, merge_rr_aux inner_r outer_r)
   | TypConcat(s1, s2, inner_r) -> TypConcat(s1, s2, merge_rr_aux inner_r outer_r)
   | TypStar(s, inner_r) -> TypStar(s, merge_rr_aux inner_r outer_r)
-
 
 (* NOTE: For now (out of naivete), we simply define a normalized type as one in
  which the only refinements are directly attached to the base type Int. *)
@@ -211,7 +237,7 @@ and reduce_star_sup (s: typ) (outer_r: rr) =
   (* NOTE: We do the same thing as concat for now, for the same reasons. *)
   TypStar(normalize_sup s, outer_r)
 
-(* TODO: These both depend on our "summing" and "max"/"min" functions defined
+(* NOTE: These both depend on our "summing" and "max"/"min" functions defined
    above. "max" and "min" are the lub/join and glb/meet things. I'm still
    confused about the definitions of join and meet...but this is the Wikipedia
    version. *)
