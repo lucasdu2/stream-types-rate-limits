@@ -15,6 +15,22 @@ type typ =
   | TypConcat of typ * typ * rr
   | TypStar of typ * rr
 
+let typ_rr (s: typ) =
+  match s with
+  | TypInt(rr) -> rr
+  | TypSum(_, _, rr) -> rr
+  | TypPar(_, _, rr) -> rr
+  | TypConcat(_, _, rr) -> rr
+  | TypStar(_, rr) -> rr
+
+let typ_bare (s: typ) =
+  match s with
+  | TypInt(_) -> TypInt([])
+  | TypSum(s1, s2, _) -> TypSum(s1, s2, [])
+  | TypPar(s1, s2, _) -> TypPar(s1, s2, [])
+  | TypConcat(s1, s2, _) -> TypConcat(s1, s2, [])
+  | TypStar(s, _) -> TypStar(s, [])
+
 (* =========================   SUBTYPING   ================================== *)
 
 (* NOTE: Determine if r1 is a subtype of r2, in a unified way (i.e. both event
@@ -241,8 +257,70 @@ and reduce_star_sup (s: typ) (outer_r: rr) =
    above. "max" and "min" are the lub/join and glb/meet things. I'm still
    confused about the definitions of join and meet...but this is the Wikipedia
    version. *)
-let rec pushout_sup (s: typ) = s
-let rec pushout_sub (s: typ) = s
+(* NOTE: Another note --- s *must* be normalized according to our definition
+   above. This won't crash if it isn't, but it won't give us the right returned
+   type. *)
+let rec pushout_sup (s: typ) =
+  match s with
+  (* Let's start with base cases. *)
+  (* TODO: We should write some unit tests. I'm not sure that this does exactly
+     what you would like. *)
+  | TypInt(_) -> s
+  | TypSum(TypInt([]), TypInt([]), _) -> s
+  | TypPar(TypInt([]), TypInt([]), _) -> s
+  | TypConcat(TypInt([]), TypInt([]), _) -> s
+  | TypStar(TypInt([]), _) -> s
+  (* And then the recursive ones. *)
+  | TypSum(s1, s2, rr) ->
+     (let pushed_s1 = pushout_sup s1 in
+      let pushed_s2 = pushout_sup s2 in
+      let lub_rr = uniform_rr_lub (typ_rr pushed_s1) (typ_rr pushed_s2) in
+      TypSum((typ_bare pushed_s1), (typ_bare pushed_s2), (List.append rr lub_rr)))
+  | TypPar(s1, s2, rr) ->
+     (let pushed_s1 = pushout_sup s1 in
+      let pushed_s2 = pushout_sup s2 in
+      let sum_rr = uniform_rr_add_sup (typ_rr pushed_s1) (typ_rr pushed_s2) in
+      TypPar((typ_bare pushed_s1), (typ_bare pushed_s2), (List.append rr sum_rr)))
+  | TypConcat(s1, s2, rr) ->
+     (let pushed_s1 = pushout_sup s1 in
+      let pushed_s2 = pushout_sup s2 in
+      let sum_rr = uniform_rr_add_sup (typ_rr pushed_s1) (typ_rr pushed_s2) in
+      TypConcat((typ_bare pushed_s1), (typ_bare pushed_s2), (List.append rr sum_rr)))
+  | TypStar(s, rr) ->
+      (let pushed_s = pushout_sup s in
+      let sum_rr = uniform_rr_add_sup (typ_rr pushed_s) (typ_rr pushed_s) in
+      TypStar((typ_bare pushed_s), (List.append rr sum_rr)))
+
+let rec pushout_sub (s: typ) =
+  match s with
+  (* Let's start with base cases. *)
+  (* TODO: We should write some unit tests. I'm not sure that this does exactly
+     what you would like. *)
+  | TypInt(_) -> s
+  | TypSum(TypInt([]), TypInt([]), _) -> s
+  | TypPar(TypInt([]), TypInt([]), _) -> s
+  | TypConcat(TypInt([]), TypInt([]), _) -> s
+  | TypStar(TypInt([]), _) -> s
+  (* And then the recursive ones. *)
+  | TypSum(s1, s2, rr) ->
+     (let pushed_s1 = pushout_sub s1 in
+      let pushed_s2 = pushout_sub s2 in
+      let glb_rr = uniform_rr_glb (typ_rr pushed_s1) (typ_rr pushed_s2) in
+      TypSum((typ_bare pushed_s1), (typ_bare pushed_s2), (List.append rr glb_rr)))
+  | TypPar(s1, s2, rr) ->
+     (let pushed_s1 = pushout_sub s1 in
+      let pushed_s2 = pushout_sub s2 in
+      let sum_rr = uniform_rr_add_sub (typ_rr pushed_s1) (typ_rr pushed_s2) in
+      TypPar((typ_bare pushed_s1), (typ_bare pushed_s2), (List.append rr sum_rr)))
+  | TypConcat(s1, s2, rr) ->
+     (let pushed_s1 = pushout_sub s1 in
+      let pushed_s2 = pushout_sub s2 in
+      let sum_rr = uniform_rr_add_sub (typ_rr pushed_s1) (typ_rr pushed_s2) in
+      TypConcat((typ_bare pushed_s1), (typ_bare pushed_s2), (List.append rr sum_rr)))
+  | TypStar(s, rr) ->
+      (let pushed_s = pushout_sub s in
+      let sum_rr = uniform_rr_add_sub (typ_rr pushed_s) (typ_rr pushed_s) in
+      TypStar((typ_bare pushed_s), (List.append rr sum_rr)))
 
 let rec check_subtype (s1: typ) (s2: typ) : bool =
   (* NOTE: We assume that both s1 and s2 are normalized here. If not, we will
@@ -286,4 +364,4 @@ let rec check_subtype (s1: typ) (s2: typ) : bool =
         right one. Specifically, we first "normalize" by pushing inward as much
         as we can. Then, if our subtyping gets stuck at any point due to mismatched
         constructors, for example, we then try to push the refinements outwards
-        again to get to some other types that *are comparable*. *)
+        again to get to some other types that are comparable. *)
