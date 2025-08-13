@@ -335,10 +335,10 @@ let rec check_subtype (s1: typ) (s2: typ) : bool =
   | TypInt(rr1), TypInt(rr2) -> uniform_rr_sub rr1 rr2
   (* NOTE: Also: TypInt subtypes all other constructors, which could also help
      with subtyping. *)
-  | TypInt(rr1), TypSum(TypInt([]), TypInt([]), rr2) -> uniform_rate_sub rr1 rr2
-  | TypInt(rr1), TypPar(TypInt([]), TypInt([]), rr2) -> uniform_rate_sub rr1 rr2
-  | TypInt(rr1), TypConcat(TypInt([]), TypInt([]), rr2) -> uniform_rate_sub rr1 rr2
-  | TypInt(rr1), TypStar(TypInt([]), rr2) -> uniform_rate_sub rr1 rr2
+  | TypInt(rr1), TypSum(TypInt([]), TypInt([]), rr2) -> uniform_rr_sub rr1 rr2
+  | TypInt(rr1), TypPar(TypInt([]), TypInt([]), rr2) -> uniform_rr_sub rr1 rr2
+  | TypInt(rr1), TypConcat(TypInt([]), TypInt([]), rr2) -> uniform_rr_sub rr1 rr2
+  | TypInt(rr1), TypStar(TypInt([]), rr2) -> uniform_rr_sub rr1 rr2
   | TypSum(s1, s2, []), TypSum(s3, s4, []) ->
      (((check_subtype s1 s3) && (check_subtype s2 s4)) ||
         (check_subtype
