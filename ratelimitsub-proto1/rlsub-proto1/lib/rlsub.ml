@@ -266,6 +266,10 @@ let rec pushout_sup (s: typ) =
   (* TODO: We should write some unit tests. I'm not sure that this does exactly
      what you would like. *)
   | TypInt(_) -> s
+  (* NOTE: These "base cases" might actually just be equivalent to what the
+     recursive cases below do (for each type constructor). Although these
+     do save some computation, as the recursive cases below do some extra checks
+     and also an append, so maybe it's fine to keep these. *)
   | TypSum(TypInt([]), TypInt([]), _) -> s
   | TypPar(TypInt([]), TypInt([]), _) -> s
   | TypConcat(TypInt([]), TypInt([]), _) -> s
@@ -329,39 +333,31 @@ let rec check_subtype (s1: typ) (s2: typ) : bool =
      now lmfao. There might be a more clever way to do this. *)
   match (s1, s2) with
   | TypInt(rr1), TypInt(rr2) -> uniform_rr_sub rr1 rr2
-  | TypSum(s1, s2, []), TypSum(s3, s4, []) ->
-     ((check_subtype s1 s3) && (check_subtype s2 s4))
-  (* NOTE: In this case, this seems to be a pretty bad rule, since it's possible
-     that the two types on the LHS, when "summed," could still be a subtype of
-     the "summed" RHS. Should think about when and when not this sort of
-     "summing" thing could make sense. See the uniform_rr_add rule above. *)
-  | TypPar(s1, s2, []), TypPar(s3, s4, []) ->
-     ((check_subtype s1 s3) && (check_subtype s2 s4))
-  | TypConcat(s1, s2, rr1), TypConcat(s3, s4, rr2) ->
-     ((uniform_rr_sub rr1 rr2) && (check_subtype s1 s3) && (check_subtype s2 s4))
-  | TypStar(s1, rr1), TypStar(s2, rr2) ->
-     ((uniform_rr_sub rr1 rr2) && (check_subtype s1 s2))
-  | s0, TypSum(s1, s2, []) ->
-     ((check_subtype s0 s1) && (check_subtype s0 s2))
-  | s0, TypPar(s1, s2, []) ->
-     ((check_subtype s0 s1) || (check_subtype s0 s2))
-  | TypStar(s1, rr1), TypConcat(s2, s3, rr2) -> false (* TODO *)
-  | s0, TypConcat(s1, s2, rr1) -> false (* TODO *)
-  | TypConcat(s1, s2, rr1), TypStar(s3, rr2) -> false
-  | s0, TypStar(s1, rr1) -> false
-  | TypSum(s1, s2, []), s3 -> false
-  | TypPar(s1, s2, []), s3 -> false
-  | TypConcat(s1, s2, rr1), TypStar(s3, rr2) -> false
-  | TypConcat(s1, s2, rr1), s3 -> false
-  | TypStar(s1, rr1), TypConcat(s2, s3, rr2) -> false
-  | TypStar(s1, rr1), s3 -> false
-  (* TODO: Also: TypInt subtypes all other constructors, which could also help
+  (* NOTE: Also: TypInt subtypes all other constructors, which could also help
      with subtyping. *)
-  | _, _ -> raise (Invalid_argument "input types are (probably) not normalized")
-
-
-     (* TODO: It seems like the push inwards, then outwards strategy may be the
-        right one. Specifically, we first "normalize" by pushing inward as much
-        as we can. Then, if our subtyping gets stuck at any point due to mismatched
-        constructors, for example, we then try to push the refinements outwards
-        again to get to some other types that are comparable. *)
+  | TypInt(rr1), TypSum(TypInt([]), TypInt([]), rr2) -> uniform_rate_sub rr1 rr2
+  | TypInt(rr1), TypPar(TypInt([]), TypInt([]), rr2) -> uniform_rate_sub rr1 rr2
+  | TypInt(rr1), TypConcat(TypInt([]), TypInt([]), rr2) -> uniform_rate_sub rr1 rr2
+  | TypInt(rr1), TypStar(TypInt([]), rr2) -> uniform_rate_sub rr1 rr2
+  | TypSum(s1, s2, []), TypSum(s3, s4, []) ->
+     (((check_subtype s1 s3) && (check_subtype s2 s4)) ||
+        (check_subtype
+           (pushout_sup (TypSum(s1, s2, [])))
+           (pushout_sub (TypSum(s3, s4, [])))))
+  | TypPar(s1, s2, []), TypPar(s3, s4, []) ->
+     (((check_subtype s1 s3) && (check_subtype s2 s4)) ||
+        (check_subtype
+           (pushout_sup (TypPar(s1, s2, [])))
+           (pushout_sub (TypPar(s3, s4, [])))))
+  | TypConcat(s1, s2, rr1), TypConcat(s3, s4, rr2) ->
+     (((uniform_rr_sub rr1 rr2) && (check_subtype s1 s3) && (check_subtype s2 s4)) ||
+        (check_subtype
+           (pushout_sup (TypConcat(s1, s2, rr1)))
+           (pushout_sub (TypConcat(s3, s4, rr2)))))
+  | TypStar(s1, rr1), TypStar(s2, rr2) ->
+     (((uniform_rr_sub rr1 rr2) && (check_subtype s1 s2)) ||
+        (check_subtype
+           (pushout_sup (TypStar(s1, rr1)))
+           (pushout_sub (TypStar(s1, rr2)))))
+  | s1, s2 ->
+     (check_subtype (pushout_sup s1) (pushout_sub s2))
