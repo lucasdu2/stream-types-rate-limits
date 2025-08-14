@@ -32,6 +32,9 @@ let typ_bare (s: typ) =
   | TypStar(s, _) -> TypStar(s, [])
 
 (* =========================   SUBTYPING   ================================== *)
+let int_div_ceil (dividend: int) (divisor: int) =
+  if (dividend mod divisor == 0) then dividend / divisor
+  else (dividend / divisor) + 1
 
 (* NOTE: Determine if r1 is a subtype of r2, in a unified way (i.e. both event
    counts and window size can be different). *)
@@ -41,14 +44,14 @@ let uniform_rate_sub (r1: rate) (r2: rate) : bool =
   if t2 <= t1 then
     if n1 <= n2 then true else false
   else
-    (let bound = (n2 / ((t2 / t1) + 1)) in
+    (let bound = (n2 / (int_div_ceil t2 t1)) in
      if n1 <= bound then true else false)
 
 let uniform_rr_sub (rr1: rr) (rr2: rr) : bool =
   (* NOTE: This is basically just implication checking using our individual
      rate subtyping decision procedure above, where we use the interpretation:
      subtype implies supertype. *)
-  let rec rr_impl_rate (rest: rr)(r: rate) : bool =
+  let rec rr_impl_rate (rest: rr) (r: rate) : bool =
     (match rest with
      | [] -> false
      | hd :: tl ->
@@ -60,6 +63,29 @@ let uniform_rr_sub (rr1: rr) (rr2: rr) : bool =
         (if (rr_impl_rate rr1 hd) then uniform_rr_sub_aux tl else false)) in
   uniform_rr_sub_aux rr2
 
+(* Concatenation. (entry rate | max crossover rate | exit rate)*)
+(* Assumption: a stream with type n/t lasts for >= t time *)
+(* stream must last for >= 3(t1) time | or: just last for max(t1, t2, t3) *)
+(* seems good to me for now ... think about this later *)
+(* (S1@n1/t1 . S2@n2/t2) . S3@n3/t3
+
+   (S1@(n1/t1 | n1/t1 | n1/t1) . S2@(n2/t2 | n2/t2 | n2/t2) . S3@(n3/t3 | n3/t3 | n3/t3))
+   ((S1 . S2)@(n1/t1 | (n1/t1)+(n2/t2) | n2/t2)) . S3@(n3/t3 | n3/t3 | n3/t3)
+
+   (S1 . S2 . S3)@(n1/t1 | max(((n1/t1)+(n2/t2)), ((n2/t2)+(n3/t3))) | n3/t3) *)
+
+(* (S1@(10/1s | 15/1s | 10/1s) . S2@(8/2s | 14/2s | 9/2s))
+   (S1 . S2)@(10/1s | max(15/1s, (10/1s + 8/2s), 14/2s) | 9/2s)*)
+
+(* (S@n/t)*
+   (S * )@(n/t | 2n/t | n/t)
+   ((S * )@(n/t | 2n/t | n/t))*
+   (S * )@(n/t | 2n/t | n/t)
+
+   (S * )@(n/t | 2n/t | n/t) . (S * )@(n/t | 2n/t | n/t)
+   (S * )@(n/t | max(2n/t, 2n/t, 2n/t) | n/t)
+   (S * )@(n/t | 2n/t | n/t) *)
+
 (* NOTE: We sometimes need to "add" rates in order to push them outwards (i.e.
    our "factoring" subtyping rules). We provide two ways to do this on
    arbitrary rates (even rates where window sizes don't match), one of which
@@ -70,7 +96,7 @@ let uniform_rr_sub (rr1: rr) (rr2: rr) : bool =
 let uniform_rate_add_sup (r1: rate) (r2: rate) : rate =
   let {events = n1; window = t1} = r1 in
   let {events = n2; window = t2} = r2 in
-  (* NOTE: Basically, we just need to convert one of the rates have a window
+  (* NOTE: Basically, we just need to convert one of the rates to have a window
      size matching that of the other rate. Then we can just add up events. *)
   if t1 = t2 then {events = (n1 + n2); window = t1}
   else if t1 < t2 then
@@ -80,14 +106,14 @@ let uniform_rate_add_sup (r1: rate) (r2: rate) : rate =
     (let option1 =
        {events = (n1 + n2); window = t1} in
      let option2 =
-       (let ratio_ceil = (t2 / t1 + 1) in
+       (let ratio_ceil = (int_div_ceil t2 t1) in
         {events = (n1 * ratio_ceil + n2); window = t2}) in
      if uniform_rate_sub option1 option2 then option1 else option2)
   else (* t1 > t2 *)
     (let option1 =
        {events = (n1 + n2); window = t2} in
      let option2 =
-       (let ratio_ceil = (t1 / t2 + 1) in
+       (let ratio_ceil = (int_div_ceil t1 t2) in
         {events = (n2 * ratio_ceil + n1); window = t1}) in
      if uniform_rate_sub option1 option2 then option1 else option2)
 
@@ -99,14 +125,14 @@ let uniform_rate_add_sub (r1: rate) (r2: rate) : rate =
     (let option1 =
        {events = (n1 + n2); window = t2} in
      let option2 =
-       (let ratio_ceil = (t2 / t1 + 1) in
+       (let ratio_ceil = (int_div_ceil t2 t1) in
         {events = (n2 / ratio_ceil); window = t1}) in
      if uniform_rate_sub option1 option2 then option1 else option2)
   else (* t1 > t2 *)
     (let option1 =
        {events = (n1 + n2); window = t1} in
      let option2 =
-       (let ratio_ceil = (t1 / t2 + 1) in
+       (let ratio_ceil = (int_div_ceil t1 t2) in
         {events = (n1 / ratio_ceil); window = t2}) in
      if uniform_rate_sub option1 option2 then option1 else option2)
 
@@ -118,6 +144,38 @@ let uniform_rate_add_sub (r1: rate) (r2: rate) : rate =
    singleton rate refinement...perhaps there is a way retain as many rates as
    possible in the refinement, in hopes that this gives us a better/more precise
    result? I guess that would be TODO. *)
+
+(* 1/5s , 2/7s *)
+(* unique lub? not sure...clearly not the case, actually. *)
+(* an upper bound:
+   - common window size so that we can compare
+   1/5s subtype of 2/7s ?
+   1/5s subtypes 2/10s subtypes 2/7s
+
+   1/5s subtypes 2/12s ?
+
+   1/5s subtypes x/12, what is an x that works?
+   ceil(12/5) = 3, 1/5s <: 3/12s !<: 2/12
+   look at smaller granularity? this could cause problems with the crossover
+   rules from earlier, since 12 > 5
+   hold off on fully using crossovers for now
+   - try to construct rate types so that they *actually* form a lattice
+   - would solve lots of problems, i.e. we can combine a list of rates (a full
+   refinement into a single glb/lub) for more efficient subtype checking
+   - or: ad hoc rules for different cases (what happens if the time interval
+   we want is > (t1 +t2), left n1/t1, right n2/t2)
+   - S1(... | ... | n1/t1) . S2(n2/t2 | ... | ...)
+   - is this a subtype of: (S1 . S2) @(... | n3/t3 | ...) where t3 >= (t1 + t2)
+
+   decide if we want to keep on developing stuff in OCaml...there is a bit of
+   inertia here, where we might just keep on using OCaml b/c we have tons of
+   code in it already.
+
+   1/5s <: 4/20s
+   ceil(20/12) = 2
+   2/12s <: 4/20s
+   4/20s *)
+
 let uniform_rate_lub (r1: rate) (r2: rate) : rate =
   if uniform_rate_sub r1 r2 then r2
   else if uniform_rate_sub r2 r1 then r1
@@ -128,12 +186,12 @@ let uniform_rate_lub (r1: rate) (r2: rate) : rate =
     (let {events = n1; window = t1} = r1 in
      let {events = n2; window = t2} = r2 in
      if t1 <= t2 then
-       (let ratio_ceil = (t2 / t1 + 1) in
+       (let ratio_ceil = (int_div_ceil t2 t1) in
         let convert_n1 = n1 * ratio_ceil in
         if convert_n1 > n2 then {events = convert_n1; window = t2}
         else {events = n2; window = t2})
      else (* t1 >= t2 *)
-       (let ratio_ceil = (t1 / t2 + 1) in
+       (let ratio_ceil = (int_div_ceil t1 t2) in
         let convert_n2 = n2 * ratio_ceil in
         if convert_n2 > n1 then {events = convert_n2; window = t1}
         else {events = n1; window = t1}))
@@ -144,12 +202,12 @@ let uniform_rate_glb (r1: rate) (r2: rate) : rate =
      (let {events = n1; window = t1} = r1 in
      let {events = n2; window = t2} = r2 in
      if t1 <= t2 then
-       (let ratio_ceil = (t2 / t1 + 1) in
+       (let ratio_ceil = (int_div_ceil t2 t1) in
         let convert_n2 = n2 / ratio_ceil in
         if convert_n2 < n1 then {events = convert_n2; window = t1}
         else {events = n1; window = t1})
      else (* t1 >= t2 *)
-       (let ratio_ceil = (t1 / t2 + 1) in
+       (let ratio_ceil = (int_div_ceil t1 t2) in
         let convert_n1 = n1 / ratio_ceil in
         if convert_n1 < n1 then {events = convert_n1; window = t2}
         else {events = n2; window = t2}))
