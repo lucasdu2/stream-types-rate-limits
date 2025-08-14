@@ -2,7 +2,7 @@ type rate = {events: int; window: int}
 (* NOTE: Yeah, we only handle Uniform rates for now :D *)
 (* NOTE: We represent the possibility of multiple refinements as a list. An
    empty list means there are no rate limits. In effect, an empty list is the
-   Top type. The Bot type can be expressed as [{events = 0; window = 1}].*)
+   Top type. The Bot type can be expressed as [{events = 0; window = 1}]. *)
 type rr = rate list
 (* NOTE: Not sure when I'll use this, but could be handy to have, since OCaml
    doesn't have a nat type. *)
@@ -67,7 +67,8 @@ let uniform_rr_sub (rr1: rr) (rr2: rr) : bool =
 (* Assumption: a stream with type n/t lasts for >= t time *)
 (* stream must last for >= 3(t1) time | or: just last for max(t1, t2, t3) *)
 (* seems good to me for now ... think about this later *)
-(* (S1@n1/t1 . S2@n2/t2) . S3@n3/t3
+(* (S1@n1/t1 . S2@n2/
+   - or: ad hoc rules for different cases (what happens if the time intert2) . S3@n3/t3
 
    (S1@(n1/t1 | n1/t1 | n1/t1) . S2@(n2/t2 | n2/t2 | n2/t2) . S3@(n3/t3 | n3/t3 | n3/t3))
    ((S1 . S2)@(n1/t1 | (n1/t1)+(n2/t2) | n2/t2)) . S3@(n3/t3 | n3/t3 | n3/t3)
@@ -328,10 +329,15 @@ let rec pushout_sup (s: typ) =
      recursive cases below do (for each type constructor). Although these
      do save some computation, as the recursive cases below do some extra checks
      and also an append, so maybe it's fine to keep these. *)
-  | TypSum(TypInt([]), TypInt([]), _) -> s
-  | TypPar(TypInt([]), TypInt([]), _) -> s
-  | TypConcat(TypInt([]), TypInt([]), _) -> s
-  | TypStar(TypInt([]), _) -> s
+  (* NOTE: Also: TypInt subtypes and supertypes all other bare constructors,
+     which could also help with subtyping. *)
+  (* NOTE: We proactively rewrite these types into TypInts to help out the
+     subtyping checker later. This is a hack. We should think about TODO how to
+     make this less of a hack later on, when we probably have more base types. *)
+  | TypSum(TypInt([]), TypInt([]), rr) -> TypInt(rr)
+  | TypPar(TypInt([]), TypInt([]), rr) -> TypInt(rr)
+  | TypConcat(TypInt([]), TypInt([]), rr) -> TypInt(rr)
+  | TypStar(TypInt([]), rr) -> TypInt(rr)
   (* And then the recursive ones. *)
   | TypSum(s1, s2, rr) ->
      (let pushed_s1 = pushout_sup s1 in
@@ -359,10 +365,10 @@ let rec pushout_sub (s: typ) =
   (* TODO: We should write some unit tests. I'm not sure that this does exactly
      what you would like. *)
   | TypInt(_) -> s
-  | TypSum(TypInt([]), TypInt([]), _) -> s
-  | TypPar(TypInt([]), TypInt([]), _) -> s
-  | TypConcat(TypInt([]), TypInt([]), _) -> s
-  | TypStar(TypInt([]), _) -> s
+  | TypSum(TypInt([]), TypInt([]), rr) -> TypInt(rr)
+  | TypPar(TypInt([]), TypInt([]), rr) -> TypInt(rr)
+  | TypConcat(TypInt([]), TypInt([]), rr) -> TypInt(rr)
+  | TypStar(TypInt([]), rr) -> TypInt(rr)
   (* And then the recursive ones. *)
   | TypSum(s1, s2, rr) ->
      (let pushed_s1 = pushout_sub s1 in
@@ -391,12 +397,6 @@ let rec check_subtype (s1: typ) (s2: typ) : bool =
      now lmfao. There might be a more clever way to do this. *)
   match (s1, s2) with
   | TypInt(rr1), TypInt(rr2) -> uniform_rr_sub rr1 rr2
-  (* NOTE: Also: TypInt subtypes all other constructors, which could also help
-     with subtyping. *)
-  | TypInt(rr1), TypSum(TypInt([]), TypInt([]), rr2) -> uniform_rr_sub rr1 rr2
-  | TypInt(rr1), TypPar(TypInt([]), TypInt([]), rr2) -> uniform_rr_sub rr1 rr2
-  | TypInt(rr1), TypConcat(TypInt([]), TypInt([]), rr2) -> uniform_rr_sub rr1 rr2
-  | TypInt(rr1), TypStar(TypInt([]), rr2) -> uniform_rr_sub rr1 rr2
   | TypSum(s1, s2, []), TypSum(s3, s4, []) ->
      (((check_subtype s1 s3) && (check_subtype s2 s4)) ||
         (check_subtype
@@ -418,4 +418,10 @@ let rec check_subtype (s1: typ) (s2: typ) : bool =
            (pushout_sup (TypStar(s1, rr1)))
            (pushout_sub (TypStar(s1, rr2)))))
   | s1, s2 ->
+     (* In the case where we can't easily make a subtyping comparison, we
+        basically just throw our hands up (for now) and put a sledgehammer to
+        the problem, i.e. calling pushout, which converts the entire type into
+        something that only involves a TypInt. This will then match the first
+        check_subtype match rule here. This may be imprecise and possibly
+        incomplete. *)
      (check_subtype (pushout_sup s1) (pushout_sub s2))
