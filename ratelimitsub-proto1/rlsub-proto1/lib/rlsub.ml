@@ -200,6 +200,7 @@ let uniform_rate_glb (r1: rate) (r2: rate) : rate =
   if uniform_rate_sub r1 r2 then r1
   else if uniform_rate_sub r2 r1 then r2
   else
+    (* TODO: I think this might be wrong… *)
      (let {events = n1; window = t1} = r1 in
      let {events = n2; window = t2} = r2 in
      if t1 <= t2 then
@@ -391,12 +392,14 @@ let rec pushout_sub (s: typ) =
       TypStar((typ_bare pushed_s), (List.append rr sum_rr)))
 
 let rec check_subtype (s1: typ) (s2: typ) : bool =
-  (* NOTE: We assume that both s1 and s2 are normalized here. If not, we will
-     have to throw an error. *)
+  (* NOTE: We assume that both s1 and s2 are normalized here. *)
   (* NOTE: I guess we'll just individually handle each possible combination for
      now lmfao. There might be a more clever way to do this. *)
   match (s1, s2) with
   | TypInt(rr1), TypInt(rr2) -> uniform_rr_sub rr1 rr2
+  (* TODO: Do we need to also take the case where there is a nonempty outer
+     refinement? Technically we will always terminate since we do the pushout
+     thing, but perhaps we're losing some unnecessary precision here. *)
   | TypSum(s1, s2, []), TypSum(s3, s4, []) ->
      (((check_subtype s1 s3) && (check_subtype s2 s4)) ||
         (check_subtype
@@ -422,6 +425,5 @@ let rec check_subtype (s1: typ) (s2: typ) : bool =
         basically just throw our hands up (for now) and put a sledgehammer to
         the problem, i.e. calling pushout, which converts the entire type into
         something that only involves a TypInt. This will then match the first
-        check_subtype match rule here. This may be imprecise and possibly
-        incomplete. *)
+        check_subtype match rule here. This may be imprecise. *)
      (check_subtype (pushout_sup s1) (pushout_sub s2))

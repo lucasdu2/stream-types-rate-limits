@@ -1,0 +1,93 @@
+\documentclass[acmsmall,nonacm,screen]{acmart}
+%% Extra classes and definitions here
+\usepackage{mathpartir}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\newcommand{\subtype}{\mathrel{<:}}
+\newcommand{\ceil}[1]{\lceil {#1} \rceil}
+\newcommand{\floor}[1]{\lfloor {#1} \rfloor}
+\newcommand{\todo}[1]{\textcolor{red}{\textbf{\texttt{TODO:}} {#1}}}
+\newcommand{\note}[1]{\textcolor{blue}{\textbf{\texttt{NOTE:}} {#1}}}
+
+% \citestyle{acmauthoryear} % Remove for [n]-style cites
+
+\title{Algorithmic subtyping for (uniform) rate types}
+\author{Lucas Du}
+\email{lzdu@ucdavis.edu}
+\affiliation{
+  \institution{University of California, Davis}
+  \country{USA}
+}
+\author{Doofenschmirtz Ingram}
+\affiliation{
+  \institution{The Couch, Catland}
+  \country{USA}
+}
+
+\thanks{\today}
+
+\begin{document}
+
+\maketitle
+
+%% Your stuff here
+\section{A cleaner subtyping system (for uniform rates)}
+In implementing a prototype subtype checker, several things seem to be clear:
+\begin{itemize}
+\item We need to figure out how to handle \textit{multiple refinements} properly.
+\item We should have a unified way to check the order between two rate refinements, regardless of window size. Relatedly, we need to figure out how to take the \texttt{max}, \texttt{min}, and \texttt{sum} of rate refinements that don't have a consistent window size.
+\item Our current system for handling crossovers for concatenation does not compose well and needs to be reworked. Specifically, simply taking the \texttt{sum} of the two rates in a concatenated pair of streams means that, for example, when we concatenate this concatenation with a third stream, we are \texttt{sum}ming \textit{all three rates}, instead of \textit{just the maximum of the crossover points}. The latter option seems to be much better and make more sense, at least from the perspective of what these rates are actually modelling.
+\end{itemize}
+In service of these goals, we propose a number of ideas:
+\begin{enumerate}
+\item We unify subtype checking on individual uniform rate refinements into one rule.
+\item We give some idea of a semantics for streams with multiple refinements. In particular, we view such sets of refinements as \textit{logical conjunctions} (in the spirit of Liquid Types, and other such refinement type systems).
+\item We define what \texttt{max} and \texttt{min} mean on these sets of multiple refinements, and give a definition of a complete lattice for these types.
+\item We define what \texttt{sum} means on these sets of multiple refinements. This \texttt{sum} operation, along with the set of rate refinements, trivially forms a commutative monoid. We also add these \texttt{sum}med refinement types to our complete lattice.
+\item We define decision procedures for subtyping over these rate refinements.
+\item We suggest an idea for handling crossovers in concatenation in a composable way.
+\end{enumerate}
+
+\subsection{A unified rule for subtyping single rates}
+\begin{mathpar}
+  \inferrule [leq-rate]{(t_2 \leq t_1 \land n_1 \leq n_2) \lor (t_1 \leq t_2 \land n_1 \leq n_2/(\ceil{t_2/t_1}))}{\mathsf{n_1/t_1} \leq \mathsf{n_2/t_2}} \\
+  \inferrule[s-relative-rate]{S_1 \subtype S_2 \\ \mathsf{n_1/t_1} \leq \mathsf{n_2/t_2}}{(S_1)@n_1/t_1 \subtype (S_2)@n_2/t_2}
+\end{mathpar}
+
+\subsection{Handling multiple refinements}
+We treat multiple refinements as logical conjunctions composed of single rates. Our rate refinement types are all multiple refinements; single rate refinements are just a special case. There is a special Top type, $\top$, which is the case where there are no rate limits and anything goes, and a special Bot type, $0$, which is the case where there is no rate at all (i.e. no events are allowed through). For example, a stream with rates $\mathsf{@10/1s}$ and $\mathsf{@12/2s}$ has rate refinement $[\mathsf{@10/1s} \land \mathsf{@12/2s}]$.
+
+Formally, we define this sort of ``merging'' as:
+\begin{mathpar}
+  \inferrule [multiple-refine-merge-sub]{\mathsf{n_1/t_1} \leq \mathsf{n_2/t_2}}{((S)@[n_1/t_1])@[n_2/t_2] \doteq (S)@[n_1/t_1]} \\
+  \inferrule [multiple-refine-merge-nosub]{\mathsf{n_1/t_1} \nleq \mathsf{n_2/t_2}}{((S)@[n_1/t_1])@[(n_2/t_2)] \doteq S@[n_1/t_1 \land n_2/t_2]} \\
+\end{mathpar}
+We also list the $\top$ (which is just the absence of rate limits) and $0$ subtyping rules:
+\begin{mathpar}
+  \inferrule [s-bot-sub]{}{(S_1)@0 \subtype (S_2)@r} \inferrule [s-top-sup]{}{(S)@r \subtype S} \\
+\end{mathpar}
+where $r$ is any rate refinement type. (There's a bit of a change of terminology here, but $r$ is just any rate refinement type as defined before: a logical conjunction of single rates $n_i/t_i$.) Note that \textsc{s-bot-sub} allows arbitrary bare stream types $S_1$ and $S_2$ without an explicit subtyping relation, as a rate refinement of $0$ subtypes \textit{any} other type (regardless of whether $S_1$ subtypes $S_2$).
+
+Subtyping on these refinements is defined as follows (note how subtyping is like logical implication and subtyping between multiple rate refinements is like implication between logical conjunctions):
+\begin{mathpar}
+  \inferrule [s-multiple-refine]
+             {S_1 \subtype S_2 \\ \forall i: 1 \leq i \leq m, \exists j: 1 \leq j \leq \text{ where } r1_j \leq r2_i}
+             {(S_1)@[r1_1, r1_2, r1_3, \ldots r1_n] \subtype (S_2)@[r2_1, r2_2, r2_3, \ldots r2_m]}
+\end{mathpar}
+We will expand on this a bit later when we get to full decision procedures on types that include \texttt{sum}med refinements.
+\subsection{\texttt{max}, \texttt{min}, and the rate refinement lattice}
+We now define \texttt{max} and \texttt{min} on these rate refinements. \texttt{max} is essentially the least upper bound of two refinements on the rate refinement lattice, while \texttt{min} is the greatest lower bound of two refinements (again, on the lattice). Refinements higher on the lattice are supertypes of refinements lower on the lattice. The idea for \texttt{max}: for all comparable pairs of single rates between both refinements, take the supertype; for each single rate (across both refinements) in the remaining single rates (that are, by definition, incomparable with any other single rates), convert all other remaining rates to that window size (using \textit{supertype} conversions), and take the minimum of those (i.e. lowest event count); add each of these minimums to the resulting conjunction.
+
+For \texttt{min}, things are a bit simpler. For all comparable single rates between both refinements, take the subtype; for all remaining incomparable rates, just add each of them directly to the resulting conjunction.
+\subsection{Adding \texttt{sum}s}
+Basically: for single rates that don't have a common window size, just keep the + around. Only collapse that information when we need to, i.e. at the final step of subtype checking. When we do the final subtyping check, we first check piecewise if each summand in the LHS (i.e. the possible subtype) subtypes a unique summand in the RHS. If not, then we must actually collapse: to do this, we try every possible case, based on common window sizes. Specifically, we iterate over every unique window size of rates on both the LHS and RHS—for each window size, we convert \textit{all} single rates to that window size (taking the supertype conversion on the LHS and the subtype conversion on the RHS), add them up naturally (which we can do once we have a common window size), and then do the normal comparison. If any check passes, then the whole check passes; otherwise, if all checks fail, the whole check fails.
+
+Alternatively, we can do this independently for the LHS and RHS, in the sense that we only take common window sizes on the LHS and RHS independently, sum for each of those window sizes, then try subtyping between all resulting pairs. For example, if the window sizes on the LHS are 1, 3, 6 and the window sizes on the RHS are 5, 7, 8, then we take overall sums with window size 1, 3, 6 on the LHS and overall sums with window size 5, 7, 8 on the RHS, then do subtyping comparisons on each possible combination (i.e. 1 vs. 5, 1 vs. 7, 1 vs. 8, 3 vs. 5, and so on). It is an interesting question (at the moment) to see which alternative is better, or if it doesn't matter.
+
+We also need to add these sums to our complete lattice.
+\subsection{Decision procedures for subtyping on multiple, \texttt{sum}med refinements}
+
+
+\section{A subtyping algorithm implementation (for uniform rates)}
+\end{document}
