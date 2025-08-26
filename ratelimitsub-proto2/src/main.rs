@@ -33,7 +33,7 @@ fn uniform_refine_sub(refine1: &RateRefine, refine2: &RateRefine) -> bool {
     return true;
 }
 
-fn merge_refine(mut inner_refine: &RateRefine, outer_refine: &RateRefine) -> RateRefine {
+fn merge_refine(inner_refine: &RateRefine, outer_refine: &RateRefine) -> RateRefine {
     // TODO: Why do I need two borrows here?
     let can_erase = |out_r: &&Rate| -> bool {
         for in_r in inner_refine {if uniform_rate_sub(in_r, out_r) {return true}};
@@ -41,20 +41,24 @@ fn merge_refine(mut inner_refine: &RateRefine, outer_refine: &RateRefine) -> Rat
     };
     // TODO: Figure out functional weirdness here --- might just want to do
     // this imperatively for now...
-    let mut to_add: RateRefine = outer_refine.into_iter().filter(can_erase).collect();
-    inner_refine.append(&to_add)
+    let to_add: Vec<&Rate> = outer_refine.into_iter().filter(can_erase).collect();
+    let mut new_refine = inner_refine.clone();
+    for r in to_add {
+        new_refine.push(*r);
+    };
+    return new_refine;
 }
 
 fn check_subtype (s1: &StreamTy, s2: &StreamTy) -> bool {
     match (s1, s2) {
         (StreamTy::Int(refine1), StreamTy::Int(refine2)) => {
-            uniform_rr_sub(&refine1, &refine2)
+            uniform_refine_sub(&refine1, &refine2)
         },
         (StreamTy::Sum(s1, s2, refine1), StreamTy::Sum(t1, t2, refine2)) => {
             // TODO: Either need to figure out how to nicely pattern match on
             // empty vectors or re-do the implementation a bit to run the push
             // in (or "normalize") operation as part of check_subtype.
-            uniform_rr_sub(&refine1, &refine2) && check_subtype(s1, t1) && check_subtype(s2, t2)
+            uniform_refine_sub(&refine1, &refine2) && check_subtype(s1, t1) && check_subtype(s2, t2)
         },
         _ => false,
     };
