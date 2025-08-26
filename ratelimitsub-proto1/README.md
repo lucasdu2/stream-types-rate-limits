@@ -1,0 +1,3 @@
+This implementation is pretty much broken and should be treated as a discarded prototype. In particular, there are (almost certainly) a number of logic bugs in the implementation that don't necessarily "do what they should do." Additionally, the core idea for "what they should do" is itself not the greatest. For posterity, this is largely for 2 reasons:
+- The rate types implemented here do not form a complete lattice, which causes various problems, ranging from nondeterminism to computational inefficiency.
+- The rate types implemented here do not compose well, particularly for the Concat stream type (and the related Star type).

@@ -41,11 +41,8 @@ let int_div_ceil (dividend: int) (divisor: int) =
 let uniform_rate_sub (r1: rate) (r2: rate) : bool =
   let (n1, t1) = (r1.events, r1.window) in
   let (n2, t2) = (r2.events, r2.window) in
-  if t2 <= t1 then
-    if n1 <= n2 then true else false
-  else
-    (let bound = (n2 / (int_div_ceil t2 t1)) in
-     if n1 <= bound then true else false)
+  if t2 <= t1 then n1 <= n2
+  else let bound = (n2 / (int_div_ceil t2 t1)) in n1 <= bound
 
 let uniform_rr_sub (rr1: rr) (rr2: rr) : bool =
   (* NOTE: This is basically just implication checking using our individual
