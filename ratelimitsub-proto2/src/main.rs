@@ -1,4 +1,4 @@
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 struct Rate {
     events: usize,
     window: usize,
@@ -33,20 +33,47 @@ fn uniform_refine_sub(refine1: &RateRefine, refine2: &RateRefine) -> bool {
     return true;
 }
 
+fn can_erase(single_rate: &Rate, full_refine: &RateRefine) -> bool {
+    for in_r in full_refine {if uniform_rate_sub(in_r, single_rate) {return true}};
+    return false;
+}
+
 fn merge_refine(inner_refine: &RateRefine, outer_refine: &RateRefine) -> RateRefine {
-    // TODO: Why do I need two borrows here?
-    let can_erase = |out_r: &&Rate| -> bool {
-        for in_r in inner_refine {if uniform_rate_sub(in_r, out_r) {return true}};
-        return false;
-    };
-    // TODO: Figure out functional weirdness here --- might just want to do
-    // this imperatively for now...
-    let to_add: Vec<&Rate> = outer_refine.into_iter().filter(can_erase).collect();
+    // TODO: Let's remove this clone somehow.
     let mut new_refine = inner_refine.clone();
-    for r in to_add {
-        new_refine.push(*r);
-    };
+    for out_r in outer_refine {
+        if !can_erase(out_r, inner_refine) {new_refine.push(*out_r)};
+    }
     return new_refine;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_uniform_rate_sub() {
+        let rate1 = Rate{events: 10, window: 3};
+        let rate2 = Rate{events: 12, window: 4};
+        let check = uniform_rate_sub(&rate1, &rate2);
+        assert_eq!(check, false);
+    }
+
+    #[test]
+    fn test_can_erase() {
+        let single_rate: Rate = Rate{events: 10, window: 3};
+        let full_refine: RateRefine = vec![Rate{events: 12, window: 4}];
+        assert_eq!(can_erase(&single_rate, &full_refine), false);
+    }
+
+    #[test]
+    fn test_merge_refine() {
+        let inner_refine: RateRefine = vec![Rate{events: 10, window: 3}];
+        let outer_refine: RateRefine = vec![Rate{events: 12, window: 4}];
+        let merged: RateRefine = merge_refine(&inner_refine, &outer_refine);
+        assert_eq!(merged, vec![Rate{events: 10, window: 3}, Rate{events: 12, window: 4}]);
+
+    }
 }
 
 fn check_subtype (s1: &StreamTy, s2: &StreamTy) -> bool {
