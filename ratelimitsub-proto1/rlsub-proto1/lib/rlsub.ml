@@ -187,12 +187,12 @@ let uniform_rate_lub (r1: rate) (r2: rate) : rate =
        (let ratio_ceil = (int_div_ceil t2 t1) in
         let convert_n1 = n1 * ratio_ceil in
         if convert_n1 > n2 then {events = convert_n1; window = t2}
-        else {events = n2; window = t2})
+        else {events = n2; window = t1})
      else (* t1 >= t2 *)
        (let ratio_ceil = (int_div_ceil t1 t2) in
         let convert_n2 = n2 * ratio_ceil in
         if convert_n2 > n1 then {events = convert_n2; window = t1}
-        else {events = n1; window = t1}))
+        else {events = n1; window = t2}))
 let uniform_rate_glb (r1: rate) (r2: rate) : rate =
   if uniform_rate_sub r1 r2 then r1
   else if uniform_rate_sub r2 r1 then r2
