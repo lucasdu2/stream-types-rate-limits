@@ -4,7 +4,23 @@ struct Rate {
     window: usize,
 }
 
-// TODO: Later on, make this an actual type and not just a type alias.
+// TODO: Try to figure out subtyping if we don't commit to immediately adding
+// and taking the max/min. We'll probably need to modify our base rate type to
+// look something like the following, since we'll need to keep "add" and "max"
+// around until the actual subtyping check. Note that min(r1,r2) is just the
+// refinement (r1 and r2) or vec![r1, r2] in our formulation here, so we don't
+// need another type constructor for that case.
+// NOTE: Let's just do a direct port of the original OCaml prototype for now,
+// particularly since we will probably take another direction with these rate
+// types very soon. Not committing to immediately adding and taking the max/min
+// of two rate types in our current setup doesn't really fix our problems anyway.
+// enum RateTy {
+//     Rate{events: usize, window: usize},
+//     Max(Rate, Rate),
+//     Add(Rate, Rate),
+// }
+
+// // TODO: Later on, make this an actual type and not just a type alias.
 type RateRefine = Vec<Rate>;
 
 // TODO: You may be able to model refinements this way too, with StreamTy just
@@ -68,6 +84,100 @@ fn merge_refine(inner_refine: &RateRefine, outer_refine: &RateRefine) -> RateRef
     }
     new_refine
 }
+
+// NOTE: This is a place where imprecision arises in our current type system.
+// There are many possible ways to compute max (interpreted as an upper bound
+// on both rates); if the two rates are not directly comparable, then there are
+// infinite upper bounds in our current system, all of which are incomparable
+// and thus without a notion of "least" upper bound (which is desirable). We
+// somewhat arbitrarily just take one such upper bound and call it a day.
+fn uniform_rate_max(rate1: &Rate, rate2: &Rate) -> Rate {
+    if uniform_rate_sub(rate1, rate2) {
+        *rate2
+    } else if uniform_rate_sub(rate2, rate1) {
+        *rate1
+    } else {
+        // NOTE: Semantically speaking, if the window sizes are equal then the
+        // rates will certainly be directly comparable (so should be handled in
+        // the prior two if-else clauses). That case actually should never get
+        // to this point.
+        if rate1.window <= rate2.window {
+            let ratio_ceil = (rate2.window).div_ceil(rate1.window);
+            let convert_n1 = rate1.events * ratio_ceil;
+            if convert_n1 > rate2.events {
+                Rate{events: convert_n1, window: rate2.window}
+            } else {
+                // NOTE: The logic here is basically that, in the case the above
+                // conversion doesn't give us a supertype/upper bound, then we
+                // want to take an upper bound with the window size of rate1.
+                // This should *always* be the rate below. Why? If rate2.window
+                // is bigger than rate1.window, the only way for the direct
+                // comparison to not work is if rate2.events is also greater
+                // than rate1.events (otherwise, rate1 is definitely a supertype
+                // of rate2). When converting rate2 to rate1's window size,
+                // since rate2's window is bigger than rate1, we end up with
+                // the rate below (by our subtyping rules for getting a
+                // supertype). rate2.events is already guaranteed to be greater
+                // than rate1.events, so the below is immediately an upper bound
+                // on both. QED. (handwavingly speaking)
+                Rate{events: rate2.events, window: rate1.window}
+            }
+        } else {
+            let ratio_ceil = (rate1.window).div_ceil(rate2.window);
+            let convert_n2 = rate2.events * ratio_ceil;
+            if convert_n2 > rate1.events {
+                Rate{events: convert_n2, window: rate1.window}
+            } else {
+                Rate{events: rate1.events, window: rate2.window}
+            }
+        }
+    }
+}
+// NOTE: This is also imprecise. We are actually able to get a fully precise
+// least upper bound by simply taking the conjunction of the two rates. However,
+// this doesn't play well with the way we end up doing the subtyping check, so
+// we just do this as a hack for now. This prototype will also end up being
+// mostly thrown away (since our current rate typing system seems sort of seems
+// fundamentally messed up), so it's OK. This is just to get a bit more practice
+// with Rust and have something to build from.
+fn uniform_rate_min(rate1: &Rate, rate2: &Rate) -> Rate {
+    if uniform_rate_sub(rate1, rate2) {
+        *rate1
+    } else if uniform_rate_sub(rate2, rate1) {
+        *rate2
+    } else {
+        if rate1.window <= rate2.window {
+            let ratio_ceil = (rate2.window).div_ceil(rate1.window);
+            let convert_n2 = rate2.events / ratio_ceil;
+            if convert_n2 < rate1.events {
+                Rate{events: convert_n2, window: rate1.window}
+            } else {
+                Rate{events: rate1.events, window: rate1.window}
+            }
+        } else {
+            let ratio_ceil = (rate1.window).div_ceil(rate2.window);
+            let convert_n1 = rate1.events / ratio_ceil;
+            if convert_n1 < rate2.events {
+                Rate{events: convert_n1, window: rate2.window}
+            } else {
+                Rate{events: rate2.events, window: rate2.window}
+            }
+        }
+    }
+}
+fn uniform_refine_collapse_max(refine: &RateRefine) -> &Rate {
+    // TODO: gdit...I miss the niceties of OCaml :(
+    match refine.iter().reduce(|acc, x| uniform_rate_max(acc, x)) {
+        Some(r) => r,
+        None => &Rate{events: 0, window: 1},
+    }
+}
+fn uniform_refine_max() {}
+
+fn uniform_refine_collapse_min(refine1: &RateRefine, refine2: &RateRefine) -> RateRefine {
+
+}
+fn uniform_refine_min() {}
 
 #[cfg(test)]
 mod tests {
