@@ -90,6 +90,9 @@ Alternatively, we can do this independently for the LHS and RHS, in the sense th
 We also need to add these sums to our complete lattice.
 \subsection{Decision procedures for subtyping on multiple, \texttt{sum}med refinements}
 
+\note{This formulation of rate types still doesn't totally work out as we would like. Caleb put it really well: the reason we need to extend our rate types to \textit{lists of rate types} is that this helps with the \textbf{composition problem}—during the implementation of subtyping, it turned out that checking subtypes required a kind of ``global'' information captured by this list of all the rates that were associated with a type.}
 
-\section{A subtyping algorithm implementation (for uniform rates)}
+\note{However, this still doesn't solve all our problems. Indeed, we still have problems with \textbf{composition}. Specifically, our rates as they stand don't form a complete lattice, which means we can't nicely take max/min (or least upper bound, greatest lower bound). We also don't have any sense of how to do addition (our ``solution'' above that just keeps the + around just delays the inevitable, since we still don't know exactly how to check subtyping between types with + in them), nor do we have any sense of how to do other possibly useful operations like concatenation. So the problem is that our rates don't compose well. But: all these operations we want, and that we want to compose well, look somewhat like an \textit{algebra}—perhaps a boolean or a Kleene algebra. And that would be a very interesting direction to investigate, since modeling our rates as an algebra like this, with nice compositional properties and a rich tradition of various algorithmic and/or decidability results would be very, very helpful. (As an aside: if Kleene algebra does indeed end up being useful to us, wouldn't KARate be a funny name...?)}
+
+\note{So: what we really need is a an \textit{algebraic theory} of rate limits. At least, that's the goal. (Maybe they do actually form some kind of monoid!)}
 \end{document}
