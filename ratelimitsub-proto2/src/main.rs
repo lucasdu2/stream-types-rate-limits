@@ -165,13 +165,11 @@ fn uniform_rate_min(rate1: &Rate, rate2: &Rate) -> Rate {
         }
     }
 }
-fn uniform_refine_collapse_max(refine: &RateRefine) -> &Rate {
-    // TODO: gdit...I miss the niceties of OCaml :(
-    match refine.iter().reduce(|acc, x| uniform_rate_max(acc, x)) {
-        Some(r) => r,
-        None => &Rate{events: 0, window: 1},
-    }
+fn uniform_refine_collapse_max(refine: &RateRefine) -> Rate {
+    let zero = Rate{events: 0, window: 1};
+    refine.iter().fold(zero, |acc: Rate, x: &Rate| uniform_rate_max(&acc, x))
 }
+
 fn uniform_refine_max() {}
 
 fn uniform_refine_collapse_min(refine1: &RateRefine, refine2: &RateRefine) -> RateRefine {
@@ -280,6 +278,7 @@ fn check_subtype(s1: &StreamTy, s2: &StreamTy) -> bool {
             // TODO: Either need to figure out how to nicely pattern match on
             // empty vectors or re-do the implementation a bit to run the push
             // in (or "normalize") operation as part of check_subtype.
+            // For empty vectors, just use an if statement in the branch
             uniform_refine_sub(refine1, refine2) && check_subtype(s1, t1) && check_subtype(s2, t2)
         }
         _ => false,
