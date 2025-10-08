@@ -1,43 +1,40 @@
 #[derive(Copy, Clone, Debug, PartialEq)]
 struct Rate {
     events: usize,
+    // TODO: We may be able to allow real-valued windows here without any issue,
+    // but first get something working with integer-valued windows.
     window: usize,
 }
 
-// TODO: Try to figure out subtyping if we don't commit to immediately adding
-// and taking the max/min. We'll probably need to modify our base rate type to
-// look something like the following, since we'll need to keep "add" and "max"
-// around until the actual subtyping check. Note that min(r1,r2) is just the
-// refinement (r1 and r2) or vec![r1, r2] in our formulation here, so we don't
-// need another type constructor for that case.
-// NOTE: Let's just do a direct port of the original OCaml prototype for now,
-// particularly since we will probably take another direction with these rate
-// types very soon. Not committing to immediately adding and taking the max/min
-// of two rate types in our current setup doesn't really fix our problems anyway.
-// enum RateTy {
-//     Rate{events: usize, window: usize},
-//     Max(Rate, Rate),
-//     Add(Rate, Rate),
-// }
-
-// // TODO: Later on, make this an actual type and not just a type alias.
-type RateRefine = Vec<Rate>;
-
-// TODO: You may be able to model refinements this way too, with StreamTy just
-// being base stream types.
-// enum RateTy {
-//     Stream(StreamTy),
-//     RateRf(Box<RateTy>, Rate),
-// }
+// TODO: Later on, make these actual types and not just a type aliases.
+type OrRate = Vec<Rate>;
+type RateRefine = Vec<OrRate>;
 
 #[derive(Clone, Debug)]
 enum StreamTy {
-    Int(RateRefine),
+    Base(RateRefine),
     Sum(Box<StreamTy>, Box<StreamTy>, RateRefine),
     Par(Box<StreamTy>, Box<StreamTy>, RateRefine),
     Concat(Box<StreamTy>, Box<StreamTy>, RateRefine),
     Star(Box<StreamTy>, RateRefine),
 }
+// NOTE: + should just be a logical or --- add this to our lattice, and we can
+// do way with any notion of max or min.
+// NOTE: One way to do things is just to reduce everything first-order, i.e.
+// only bare rates connected with AND, OR. Then can solve for entailment. There
+// may be no way to do this without resorting to symbolic values and an SMT solver,
+// but I think we may be able to get away with heuristics for now.
+// NOTE: Even if we must resort to symbolic values, we may be able to constrain
+// the search space even further by bounding it with the window sizes in the
+// entailment we are trying to prove.
+// NOTE: Reducing everything to first-order using aggressive heuristics might
+// be the simple, if very crude, first thing you can try. Trying to delegate
+// things to an SMT solver or more fine-grained heuristics for an exact answer
+// is a good next step.
+// The below is for our manual (i.e. non-SMT) heuristic solution.
+// NOTE: Perhaps LHS should be in disjunctive normal form, RHS should be in
+// conjunctive normal form: then we need to check that every clause on the LHS
+// implies all clauses on the RHS for entailment.
 
 fn uniform_rate_sub(rate1: &Rate, rate2: &Rate) -> bool {
     if rate2.window <= rate1.window {
@@ -85,12 +82,6 @@ fn merge_refine(inner_refine: &RateRefine, outer_refine: &RateRefine) -> RateRef
     new_refine
 }
 
-// NOTE: This is a place where imprecision arises in our current type system.
-// There are many possible ways to compute max (interpreted as an upper bound
-// on both rates); if the two rates are not directly comparable, then there are
-// infinite upper bounds in our current system, all of which are incomparable
-// and thus without a notion of "least" upper bound (which is desirable). We
-// somewhat arbitrarily just take one such upper bound and call it a day.
 fn uniform_rate_max(rate1: &Rate, rate2: &Rate) -> Rate {
     if uniform_rate_sub(rate1, rate2) {
         *rate2
