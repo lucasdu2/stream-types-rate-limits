@@ -30,6 +30,8 @@ def solve(spec):
 # Quick Python hack to see if Z3 is capable of solving the kinds of constraints
 # we're looking at. (Perhaps can also check out Rosette solver interface or the
 # OCaml bindings for Z3.)
+# NOTE: I'm not actually using this; in fact, I don't even know if it would work
+# this way.
 def div_ceil(a, b):
     if a % b != 0:
         (a / b) + 1
@@ -141,7 +143,7 @@ def check2():
     cl18 = z3.Implies(b3 > b2, a3 <= a2)
     solve(z3.And(cl0,cl1,cl2,cl3,cl4,cl5,cl6,cl7,cl8,cl9,cl10,cl11,cl12,cl13,cl14,cl15,cl16,cl17,cl18))
 
-check2()
+# check2()
 
 
 # Check if (10/3 || 12/5) <: (40/4 || 10/5).
@@ -171,3 +173,42 @@ def check3():
     solve(z3.And(cl0,cl1,cl2,cl3,cl4,cl5,cl6,cl7,cl8,cl9,cl10,cl11,cl12,cl13,cl14,cl15,cl16,cl17))
 
 # check3()
+
+# Check if (5/10 || 7/5) <: (38000500/100000 || 250940989/85823490).
+def check4():
+    a1 = z3.Int('a1')
+    a2 = z3.Int('a2')
+    b1 = z3.Int('b1')
+    b2 = z3.Int('b2')
+    # TODO: We don't have any way of doing floor or ceiling yet (and this may
+    # in fact be impossible). Update: we do now with the extra % modulo constraints.
+    cl0 = z3.And(a1 > 0, a2 > 0, b1 > 0, b2 > 0)
+    # Symbolic constraints for (5/10 || 7/5), b1 is window size, a1 is resulting event count
+    cl1 = z3.Implies(b1 <= 5, a1 == 12)
+    cl2 = z3.Implies(z3.And(b1 > 5, b1 <= 10, b1 % 5 == 0), a1 == 5 + 7 * (b1 / 5))
+    cl3 = z3.Implies(z3.And(b1 > 5, b1 <= 10, b1 % 5 != 0), a1 == 5 + 7 * ((b1 / 5) +1))
+    cl4 = z3.Implies(z3.And(b1 > 10, b1 % 10 == 0, b1 % 5 == 0), a1 == 5 * (b1 / 10) + 7 * (b1 / 5))
+    cl5 = z3.Implies(z3.And(b1 > 10, b1 % 10 != 0, b1 % 5 == 0), a1 == 5 * ((b1 / 10) + 1) + 7 * (b1 / 5))
+    cl6 = z3.Implies(z3.And(b1 > 10, b1 % 10 == 0, b1 % 5 != 0), a1 == 5 * (b1 / 10) + 7 * ((b1 / 5) + 1))
+    cl7 = z3.Implies(z3.And(b1 > 10, b1 % 10 != 0, b1 % 5 != 0), a1 == 5 * ((b1 / 10) + 1) + 7 * ((b1 / 5) + 1))
+    # Symbolic constraints for (38000500/100000 || 250940989/85823490), b2 is window size, a2 is resulting event count
+    cl8 = z3.Implies(z3.And(b2 <= 100000, 100000 % b2 == 0, 85823490 % b2 == 0),
+                     a2 == (38000500 / (100000 / b2) + (250940989 / (85823490 / b2))))
+    cl9 = z3.Implies(z3.And(b2 <= 100000, 100000 % b2 != 0, 85823490 % b2 == 0),
+                      a2 == (38000500 / (100000 / b2 + 1) + (250940989 / (85823490 / b2))))
+    cl10 = z3.Implies(z3.And(b2 <= 100000, 100000 % b2 == 0, 85823490 % b2 != 0),
+                      a2 == (38000500 / (100000 / b2) + (250940989 / (85823490 / b2 + 1))))
+    cl11 = z3.Implies(z3.And(b2 <= 100000, 100000 % b2 != 0, 85823490 % b2 != 0),
+                      a2 == (38000500 / (100000 / b2 + 1) + (250940989 / (85823490 / b2 + 1))))
+    cl12 = z3.Implies(z3.And(b2 > 100000, b2 <= 85823490, 85823490 % b2 == 0),
+                     a2 == 38000500 + 250940989 / (85823490 / b2))
+    cl13 = z3.Implies(z3.And(b2 > 100000, b2 <= 85823490, 85823490 % b2 == 0),
+                     a2 == 38000500 + 250940989 / (85823490 / b2 + 1))
+    cl14 = z3.Implies(b2 > 85823490, a2 == 38000500 + 250940989)
+    # Subtyping constraints
+    cl15 = z3.Implies(z3.And(b1 <= b2, b2 % b1 == 0), a1 * (b2 / b1) <= a2)
+    cl16 = z3.Implies(z3.And(b1 <= b2, b2 % b1 != 0), a1 * (b2 / b1 + 1) <= a2)
+    cl17 = z3.Implies(b1 > b2, a1 <= a2)
+    solve(z3.And(cl0,cl1,cl2,cl3,cl4,cl5,cl6,cl7,cl8,cl9,cl10,cl11,cl12,cl13,cl14,cl15,cl16,cl17))
+
+check4()

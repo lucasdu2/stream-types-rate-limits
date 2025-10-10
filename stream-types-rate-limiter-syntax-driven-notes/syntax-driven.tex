@@ -1,0 +1,79 @@
+\documentclass[acmsmall,nonacm,screen]{acmart}
+%% Extra classes and definitions here
+\usepackage{mathpartir}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{amssymb}
+
+%% rate refinement formatting macro
+\newcommand{\rr}[3] {
+  {#1}_{\mathsf{@{#2}/{#3}}}
+}
+%% segmented rate refinement formatting macro
+\newcommand{\rrseg}[3] {
+    {#1}_{|\mathsf{@{#2}/{#3}}|}
+}
+
+\newcommand{\subtype}{\mathrel{<:}}
+\newcommand{\ceil}[1]{\lceil {#1} \rceil}
+\newcommand{\floor}[1]{\lfloor {#1} \rfloor}
+\newcommand{\todo}[1]{\textcolor{red}{\textbf{\texttt{TODO:}} {#1}}}
+\newcommand{\note}[1]{\textcolor{blue}{\textbf{\texttt{NOTE:}} {#1}}}
+
+% \citestyle{acmauthoryear} % Remove for [n]-style cites
+
+\title{A syntax-driven (and possibly solver-aided) approach to subtyping rate types}
+\author{Lucas Du}
+\email{lzdu@ucdavis.edu}
+\affiliation{
+  \institution{University of California, Davis}
+  \country{USA}
+}
+\author{Doofenschmirtz Davies}
+\affiliation{
+  \institution{The Couch, Catland}
+  \country{USA}
+}
+
+\thanks{\today}
+
+\begin{document}
+
+\begin{abstract}
+  Maybe a syntax-driven approach isn't so bad for subtyping rate type refinements? We present structural subtyping rules for rate types, a Kleene-like algebra for rewriting/simplifying rate types to a normal form, and a procedure for checking entailment between two rate types in normal form. The crux of this approach rests on ways in which we can abstract over problematic type constructors, namely: Concat ($\bullet$), Star ($^*$), and Parallel ($\parallel$).
+
+  For Concat and Star, we introduce a rewriting rule when all components of the type (two for Concat, one for Star) are in ``raw'' form, i.e. of form $@n/t$, that eliminates the type constructor by introducing an equivalent conjunction. For Parallel, we treat it as an irreducible type until the moment we actually check subtyping/entailment; we then attempt to symbolically abstract over the Parallel type using a single symbolic ``raw'' rate type, generate some constraints needed for the entailment, and then solve those constraints to check entailment.
+
+  The hope is that (a) this algorithm is efficient and (b) that we can prove this syntax-driven abstract approach sound (and possibly complete) with respect to an underlying automata-based model like timed automata. For example, the Kleene-like algebraic rules that we rely on for rewriting/simplifying are not formalized in any way (they just ``seem'' right, which is actually kind of terrible); it seems quite important that we actually prove some kind of Kleene Theorem that gives these rules an actual basis.
+\end{abstract}
+
+\maketitle
+
+%% Your stuff here
+\section{Some motivation}
+\subsection{Old problems}
+A big problem with our previous syntactic approach was that it lacked nice algebraic properties. Another problem was that it was simply poorly designed, i.e. the initial formulation didn't take into account some basic things like (a) multiple rate type refinements on a single stream, (b) the fact that the stream types calculus allowed rate type refinements to be arbitrarily nested, and so were not all going to be ``raw'' rates of the form ${@n/t}$, where $n$ and $t$ are some natural numbers (or positive reals—this point is still not totally well-considered), or (c) the fact that rate refinements could have different window sizes (i.e. the older rule for uniform concatenation assumed the same window size for both streams and just added the events, see below).
+\begin{mathpar}
+  \inferrule [s-uniform-concat-factor]{ }{\rr{S}{n_1}{t} \bullet \rr{T}{n_2}{t} \subtype \rr{(S \bullet T)}{(n_1+n_2)}{t}} \and
+\end{mathpar}
+\subsection{An aside: narrowing our focus}
+We will focus only on \textit{uniform} (or \textit{sliding}) rates for the moment, in order to simplify our work a bit. The hope is that generalizing ideas from the uniform (sliding) setting to the segmented (tumbling) setting won't be too much more of a lift.
+\subsection{Some new ideas}
+In response to these problems, we thought about ways to ground our type system in something more algebraic, i.e. Kleene algebras, regular languages, finite state automata, etc. This seems appealing, since most of our operations are covered (exactly) by the rules for Kleene algebras (see, for example: concatenation, star, and sum/choice), and thus finding some kind of model for rates in regular languages would give us all that nice theoretical goodness (somewhat, not exactly) for free.
+
+This approach is still promising, and worth investigating much further, but there are a couple immediate issues (at least as far as we can tell, at the current moment):
+\begin{itemize}
+\item A very natural way to model rates is with \textit{timed automata} (courtesy of Rajeev Alur and David Dill, 1994). But timed automata have some bad automata-theoretic properties, i.e. undecidability of inclusion for \textit{nondeterministic} timed automata. And we (read: I) can't yet figure out how to model all the type constructs for our rates (i.e. Parallel and Concat) with a \textit{deterministic} timed automata (which has better automata-theoretic properties).
+\item It's also possible to model rates as just a standard regular language/finite state automata using a notion of ``ticks''—one ``tick'' per unit of time (represented by some letter like $\checkmark$), with events inside each unit of time (represented by some letter like $a$). So one possible trace could be: $\checkmark aaa \checkmark a \checkmark \checkmark \checkmark aa$. But a (possibly very naive) automaton construction for languages like this has exponential state complexity with respect to the number of ``ticks'' in a window: one upper bound on the state complexity is $(n+1)^m+1$, for a uniform rate type of form $@n/m$.\footnote{The main idea for this bound is that, at any moment in time, we need to hold $m$ ticks, i.e. one window, in our memory, each tick of which could hold anywhere from $0$ to $n$ events. This is finite memory, so our language is regular, but encoding all possible configurations of this memory, along with a reject state, gives us a state complexity of $(n+1)^m+1$. This would probably get worse when we try to model constructs like Concat or Parallel, or eventually do things like check inclusion.}
+\end{itemize}
+\subsection{Back to syntax-driven typing rules (for now)}
+Given these potential efficiency problems with an automata-based approach, perhaps we should turn back temporarily to our old syntax-driven, typing rule style? I think there is a bit more juice there worth squeezing, particularly since it promises to be more efficient. The automata stuff is still important though, since I think it will give us a semantic basis to ground our syntactic typing rules.
+
+\section{A boolean-ish algebra for rate types}
+\section{Structural subtyping rules}
+\section{Algebraic rewriting rules}
+\subsection{Reduction to a normal form}
+\section{Checking entailment}
+\subsection{Checking entailment with parallel sums}
+\section{Foundational theoretical concerns and next steps}
+\end{document}
