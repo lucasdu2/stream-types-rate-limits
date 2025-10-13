@@ -40,6 +40,9 @@ latex
 (define accent1 "Navy")
 (define accent2 "Saddle Brown")
 (define accent3 "Orchid")
+(define hlcolor "Light Pink")
+
+(define lambda-st ($"\\lambda^{ST}"))
 
 (set-page-numbers-visible! #f)
 
@@ -78,6 +81,14 @@ latex
         pct))))
 
 (define base-bg (filled-rectangle client-w client-h #:color bgcolor))
+(define hl-bg (filled-rectangle client-w client-h #:color "Cornsilk"))
+
+;; Highlight
+(define (hl pct add-size)
+  (cc-superimpose (colorize
+                   (filled-rounded-rectangle (+ (pict-width pct) add-size) (+ (pict-height pct) add-size))
+                   hlcolor)
+                  pct))
 
 ;; =============================================================================
 ;; Title slide
@@ -116,7 +127,7 @@ latex
 (slide
  (vl-append
   10
-  (colorize (text "Lots of pitfalls:" (cons 'bold (current-main-font)) 60) accent2)
+  (colorize (text "Lots of pitfalls..." (cons 'bold (current-main-font)) 54) accent1)
   (item "Ordering, causality")
   (item "Distribution, parallelism")
   (item "Latency, throughput, load-management")))
@@ -141,16 +152,16 @@ latex
   20
   (vl-append
    10
-   (colorize (text "Our special interest..." (cons 'italic (current-main-font)) 32) accent3)
-   (colorize (text "Language support for reasoning about" (current-main-font) 40) accent3))
+   (colorize (text "Our special interest..." (cons 'italic (current-main-font)) 32) accent2)
+   (colorize (text "Language support for reasoning about" (current-main-font) 40) accent2))
   (colorize (text "rates & load" (cons 'bold (current-main-font)) 80) accent1)
   (vr-append
    10
-   (colorize (text "What could go wrong?" (cons 'italic (current-main-font)) 32) accent3)
-   (colorize (text "Latency spikes" (current-main-font) 28) accent3)
-   (colorize (text "Dropped events" (current-main-font) 28) accent3)
-   (colorize (text "Service outages" (current-main-font) 28) accent3)
-   (colorize (text "etc." (current-main-font) 28) accent3))))
+   (colorize (text "What could go wrong?" (cons 'italic (current-main-font)) 32) accent2)
+   (colorize (text "Latency spikes" (current-main-font) 28) accent2)
+   (colorize (text "Dropped events" (current-main-font) 28) accent2)
+   (colorize (text "Service outages" (current-main-font) 28) accent2)
+   (colorize (text "etc." (current-main-font) 28) accent2))))
 
 (add1-slide-number)
 (slide
@@ -175,11 +186,71 @@ latex
             (colorize (disk 45) accent2))))
 (slide
  (para "In particular, we want to use" (bt "types") "to reason about the" (it "rate behavior of a stream program") "in a" (bt "principled") "and" (bt "compositional") "way.")
+ 'next
  (item "Can a stream with some rate safely be used in place of another?")
- (item "Can two stream programs fit together without rate-limiting or buffering at the boundary?")
+ (item "Can two stream programs fit together without buffering at the boundary? Can we put a bound on any buffering needed?")
  (item "How does a stream operator transform an input rate into an output rate?"))
+
+;; connection to Hydro here:
+;; we want to implement on top of an existing, well-engineered system that cares about some of these same issues
+;; would be interesting to use for DSL implementation and evaluation
 
 (add1-slide-number)
 (background-image base-bg)
 (slide
- (scale (colorize ($"S \\mathrel{::=} @n/t\\ |\\ S+S\\ | S \\cdot S\\ |\\ S \\parallel S\\ |\\ S\\land S") accent2) 1.2))
+ (hc-append 10
+            (t "For now, we focus on")
+            (colorize (text "subtyping" (cons 'bold (current-main-font)) 50) accent1))
+ 'next
+ (hl (item "Can a stream with some rate safely be used in place of another?") 30))
+
+(add1-slide-number)
+(background-image base-bg)
+(slide
+ (text "A grammar for stream rates" (current-main-font) 40)
+ (scale (colorize ($"S \\mathrel{::=} @n/t\\ |\\ S+S\\ |\\ S \\cdot S\\ |\\ S \\parallel S\\ |\\ S\\land S") accent2) 1.2))
+
+(add1-slide-number)
+(slide
+ (scale (colorize ($"S \\mathrel{::=} @n/t\\ |\\ S+S\\ |\\ S \\cdot S\\ |\\ S \\parallel S\\ |\\ S\\land S") accent2) 1.3)
+ (para "Note that this kind of model, taken from" lambda-st ", gives us a" (it "richer structure") "than standard models of streams.")
+ (para "We can precisely describe streams with " (it "concatenation") "," (it "sum/tagged union") ", and" (it "parallelism") ".")
+ (para "We can also give multiple rate types to a stream with" ($"\\land") "."))
+
+(add1-slide-number)
+(slide
+ (vl-append
+  30
+  (colorize (text "Two kinds of rate distributions" (cons 'italic (current-main-font)) 24) "black")
+  (colorize (text "1. uniform (or sliding) rates" (cons 'bold (current-main-font)) 40) accent1)
+  (colorize (text "2. segmented (or tumbling) rates" (cons 'bold (current-main-font)) 40) accent1))
+ 'next
+ (para "This is a relatively standard classification.")
+ (hl (para "More interestingly, it maps well onto the kinds of distributions enforced by practical rate-limiting algorithms.") 70))
+
+;; explain both kinds of distributions, stick with sliding
+;; try to use a diagram
+
+;; explain raw/base subtyping in the sliding setting
+(add1-slide-number)
+(slide
+ ($"@n_1/t_1 \\mathrel{<:} @n_2/t_2"))
+;; try to use a diagram
+
+;; explain problems when we add in our richer type constructors
+;; i.e. there's no compositional way to combine S₁ + S₂  if there's no immediate subtyping relation
+;; same for S₁ || S₂, for example (the problem is even worse here, actually)
+;; what do we do? well, there's some connection here to (concurrent) Kleene algebras and regular languages
+;; put the Kleene algebra rules up
+;; maybe we can simplify things using some kind of Kleene algebra?
+;; so let's try to formalize some connections!
+;; automata --- tick and timed automata
+;; seems pretty expensive to directly do inclusion on these though...
+;; so maybe, let's prove a Kleene theorem that allows us to do Kleene algebra rewrites based on the automata semantics
+;; and then use that algebra to simplify our typechecking
+;; and use some sound (but possibly incomplete) abstractions to actually decide subtyping more efficiently!
+;; a sketch of the ideas:
+;; - Kleene-like algebra rules for rewriting and simplifying full rate types
+;; - a core boolean algebra of rates that all full rate types can be lowered to
+;; - some sound abstractions to get our boolean algebra to a normal form that is easily subtypable
+;; - check subtyping by deciding implication/entailment
