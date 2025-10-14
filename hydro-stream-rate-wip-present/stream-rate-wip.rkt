@@ -141,10 +141,53 @@ latex
   (colorize (text "and correctness" (cons 'bold (current-main-font)) 60) accent2)
   (colorize (text "support" (cons 'italic (current-main-font)) 48) accent3)))
 
+(define dataflow-graph-nodes
+  (let ([node1 (colorize (disk 45) accent2)]
+        [node2 (colorize (disk 45) accent2)]
+        [node3 (colorize (disk 45) accent2)]
+        [node4 (colorize (disk 45) accent2)]
+        [node5 (colorize (disk 45) accent2)]
+        [node6 (colorize (disk 45) accent2)])
+    (define df-nodes (hc-append 200 node1 (vc-append 100 node2 node3 node4) (vc-append 100 node5 node6)))
+    ;; There must be a more concise way to do this lmfao
+    (pin-arrow-line
+     10 (pin-arrow-line
+        10 (pin-arrow-line
+            10 (pin-arrow-line
+                10 (pin-arrow-line
+                    10 (pin-arrow-line
+                        10 (pin-arrow-line
+                            10 (pin-arrow-line
+                                10 (pin-arrow-line
+                                    10 df-nodes node1 rc-find node2 lc-find
+                                    #:line-width 3 #:color accent3
+                                    #:label (hl (colorize (text "S | φ" (current-main-font) 15) accent1) 5))
+                                node1 rc-find node3 lc-find #:line-width 3 #:color accent3
+                                #:label (hl (colorize (text "S | φ" (current-main-font) 15) accent1) 5))
+                            node1 rc-find node4 lc-find #:line-width 3 #:color accent3
+                            #:label (hl (colorize (text "S | φ" (current-main-font) 15) accent1) 5))
+                        node3 rc-find node5 lc-find #:line-width 3 #:color accent3)
+                    node3 rc-find node6 lc-find #:line-width 3 #:color accent3)
+                node4 rc-find node5 lc-find #:line-width 3 #:color accent3
+                #:label (hl (colorize (text "S | φ" (current-main-font) 15) accent1) 5))
+            node4 rc-find node6 lc-find #:line-width 3 #:color accent3
+            #:label (hl (colorize (text "S | φ" (current-main-font) 15) accent1) 5))
+        node2 rc-find node5 lc-find #:line-width 3 #:color accent3
+        #:label (hl (colorize (text "S | φ" (current-main-font) 15) accent1) 5))
+     node2 rc-find node6 lc-find #:line-width 3 #:color accent3
+     #:label (hl (colorize (text "S | φ" (current-main-font) 15) accent1) 5))))
+
 (add1-slide-number)
 (slide
- (colorize (text "A vision for verified dataflow" (cons 'bold (current-main-font)) 48) accent1)
- (colorize (t "(todo: add dataflow diagram, refinement type drawing)") "crimson"))
+ (colorize (text "A vision for verified dataflow" (cons 'bold (current-main-font)) 40) accent1)
+ (cc-superimpose
+  titleless-page
+  (vc-append 30
+   dataflow-graph-nodes
+   (ht-append
+    20
+    (hl (colorize (text "S | φ" (cons 'bold (current-main-font)) 40) accent1) 10)
+    (para "Where S a stream and φ is some property. In other words, a" (it "refinement type") "or" (it "(property type)") ".")))))
 
 (add1-slide-number)
 (slide
@@ -230,6 +273,9 @@ latex
 
 ;; explain both kinds of distributions, stick with sliding
 ;; try to use a diagram
+(add1-slide-number)
+(slide
+ titleless-page)
 
 ;; explain raw/base subtyping in the sliding setting
 (add1-slide-number)
