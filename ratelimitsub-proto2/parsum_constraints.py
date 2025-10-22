@@ -80,6 +80,12 @@ def check2():
     b2 = z3.Int('b2')
     b3 = z3.Int('b3')
     cl0 = z3.And(a1 > 0, a2 > 0, a3 > 0, b1 > 0, b2 > 0, b3 > 0)
+    # Test performance if we set additional window size constraints
+    # NOTE: This is much better (if our conjecture is true), and may possibly
+    # even mean we can just hand-code the decision procedure instead of calling
+    # out to a dedicated constraint solver! 0.2 seconds vs 3.3 seconds.
+    extra1 = z3.And(b1 == b2, b2 == b3, b1 == b3)
+    extra2 = z3.Or(b1 == 10, b1 == 5, b1 == 200, b1 == 80, b1 == 30, b1 == 10000, b1 == 9000)
     # Symbolic constraints for (5/10 || 7/5), b1 is window size, a1 is resulting event count
     cl1 = z3.Implies(b1 <= 5, a1 == 12)
     cl2 = z3.Implies(z3.And(b1 > 5, b1 <= 10, b1 % 5 == 0), a1 == 5 + 7 * (b1 / 5))
@@ -137,13 +143,16 @@ def check2():
     # i.e. (n1/t1 . n2/t2) equivalent to (n1+n2)/t1 ^ (n2/t2)
     # TODO: Is this even true? Who knows. I think so though, and it offers a
     # generalization of the rewrite rule we had before for matching window sizes.
+    # TODO: OK, I don't think this is true. If anything, it would be:
+    # (n1/t1 . n2/t2) <: (n1+n2)/t1 OR (n1+n2)/t2
     cl15 = z3.Implies(b1 <= b2, z3.If(b2 % b1 != 0, (a1 + a3) * (b2 / b1 + 1) <= a2, (a1 + a3) * (b2 / b1) <= a2))
     cl16 = z3.Implies(b1 > b2, a1 + a3 <= a2)
     cl17 = z3.Implies(b3 <= b2, z3.If(b2 % b3 != 0, a3 * (b2 / b3 + 1) <= a2, a3 * (b2 / b3) <= a2))
     cl18 = z3.Implies(b3 > b2, a3 <= a2)
-    solve(z3.And(cl0,cl1,cl2,cl3,cl4,cl5,cl6,cl7,cl8,cl9,cl10,cl11,cl12,cl13,cl14,cl15,cl16,cl17,cl18))
+    solve(z3.And(cl0,cl1,cl2,cl3,cl4,cl5,cl6,cl7,cl8,cl9,cl10,cl11,cl12,cl13,cl14,cl15,cl16,cl17,cl18,
+                 extra1, extra2))
 
-# check2()
+check2()
 
 
 # Check if (10/3 || 12/5) <: (40/4 || 10/5).
@@ -211,4 +220,4 @@ def check4():
     cl17 = z3.Implies(b1 > b2, a1 <= a2)
     solve(z3.And(cl0,cl1,cl2,cl3,cl4,cl5,cl6,cl7,cl8,cl9,cl10,cl11,cl12,cl13,cl14,cl15,cl16,cl17))
 
-check4()
+# check4()
