@@ -1,4 +1,4 @@
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct Rate {
     // NOTE: We may be able to allow real-valued windows here without any issue,
     // but first get something working with integer-valued windows.
@@ -6,19 +6,19 @@ struct Rate {
     window: usize,
 }
 
-// enum CoreRate {
-//     Single(Rate),
-//     Par(Vec<Rate>),
-//     LConcat(Box<CoreRate>, Box<CoreRate>),
-// }
+enum CoreRate {
+    Single(Rate),
+    Par(Vec<Rate>),
+    LConcat(Box<CoreRate>, Box<CoreRate>),
+}
 
-// enum NormBARate {
-//     Core(CoreRate),
-//     Or(Box<NormBARate>, Box<NormBARate>),
-//     And(Box<NormBARate>, Box<NormBARate>),
-// }
+enum NormBARate {
+    Core(CoreRate),
+    Or(Box<NormBARate>, Box<NormBARate>),
+    And(Box<NormBARate>, Box<NormBARate>),
+}
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum BARate {
     Raw(Rate),
     Par(Box<BARate>, Box<BARate>),
@@ -32,7 +32,7 @@ enum BARate {
     And(Box<BARate>, Box<BARate>)
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum StreamRate {
     Raw(Rate),
     Sum(Box<StreamRate>, Box<StreamRate>),
@@ -116,7 +116,6 @@ fn convert_to_ba(sr: &StreamRate, rel: &SubRel) -> BARate {
     }
 }
 
-// BARate::Raw(Rate{events: 0, window: 1})
 // NOTE: The second return value is a bool indicating whether the reduction step
 // actually changed the BARate. This is used in fixpoint computation, i.e. we
 // stop when the BARate rewrites stop changing.
@@ -245,12 +244,12 @@ fn reduce_ba_fixpoint(bar: BARate) -> BARate {
     }
 }
 
-// fn normalize_ba(bar: BARate) -> NormBARate {
-//     // TODO: Placeholder function for converting a fully reduce BARate to a
-//     // NormBARate type, throwing an error if BARate is not actually fully
-//     // reduced to normal form.
-//     NormBARate::Core(CoreRate::Single(Rate{events: 10, window: 10}))
-// }
+fn normalize_ba(bar: BARate) -> NormBARate {
+    // TODO: Placeholder function for converting a fully reduce BARate to a
+    // NormBARate type, throwing an error if BARate is not actually fully
+    // reduced to normal form.
+    NormBARate::Core(CoreRate::Single(Rate{events: 10, window: 10}))
+}
 
 fn stream_sub(sr1: &StreamRate, sr2: &StreamRate) -> bool {
     let norm_ba_lhs = normalize_ba(convert_to_ba(sr1, &SubRel::LHS));
@@ -260,4 +259,42 @@ fn stream_sub(sr1: &StreamRate, sr2: &StreamRate) -> bool {
 
 fn main() {
     println!("Hello, world!");
+}
+
+#[cfg(test)]
+mod tests {
+    // Note this useful idiom: importing names from outer (for mod tests) scope.
+    use super::*;
+
+    // TODO: Consider using a property based testing library here to at least
+    // test termination.
+    #[test]
+    fn test_reduce_ba_fixpoint() {
+        let testba1 = BARate::Raw(Rate{events: 10, window: 20});
+        assert_eq!(reduce_ba_fixpoint(testba1), BARate::Raw(Rate{events: 10, window: 20}));
+        let testba2 = BARate::Par(
+            Box::new(BARate::Or(
+                Box::new(BARate::Raw(Rate{events: 10, window: 20})),
+                Box::new(BARate::Raw(Rate{events: 50, window: 55})))),
+            Box::new(BARate::And(
+                Box::new(BARate::Raw(Rate{events: 30, window: 5})),
+                Box::new(BARate::Raw(Rate{events: 1000, window: 5})))));
+        assert_eq!(reduce_ba_fixpoint(testba2),
+                   BARate::Or(
+                       Box::new(BARate::And(
+                           Box::new(BARate::Par(
+                               Box::new(BARate::Raw(Rate{events: 30, window: 5})),
+                               Box::new(BARate::Raw(Rate{events: 10, window: 20})))),
+                           Box::new(BARate::Par(
+                               Box::new(BARate::Raw(Rate{events: 1000, window: 5})),
+                               Box::new(BARate::Raw(Rate{events: 10, window: 20})))))),
+                       Box::new(BARate::And(
+                           Box::new(BARate::Par(
+                               Box::new(BARate::Raw(Rate{events: 30, window: 5})),
+                               Box::new(BARate::Raw(Rate{events: 50, window: 55})))),
+                           Box::new(BARate::Par(
+                               Box::new(BARate::Raw(Rate{events: 1000, window: 5})),
+                               Box::new(BARate::Raw(Rate{events: 50, window: 55}))))))));
+    }
+
 }
