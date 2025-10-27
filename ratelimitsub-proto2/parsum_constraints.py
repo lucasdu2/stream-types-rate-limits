@@ -189,6 +189,7 @@ def check4():
     a2 = z3.Int('a2')
     b1 = z3.Int('b1')
     b2 = z3.Int('b2')
+
     # TODO: We don't have any way of doing floor or ceiling yet (and this may
     # in fact be impossible). Update: we do now with the extra % modulo constraints.
     cl0 = z3.And(a1 > 0, a2 > 0, b1 > 0, b2 > 0)
