@@ -1,3 +1,6 @@
+use crate::z3::Solver;
+use crate::z3::SatResult;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Rate {
     // NOTE: We may be able to allow real-valued windows here without any issue,
@@ -6,17 +9,17 @@ struct Rate {
     window: usize,
 }
 
-enum CoreRate {
-    Single(Rate),
-    Par(Vec<Rate>),
-    LConcat(Box<CoreRate>, Box<CoreRate>),
-}
+// enum CoreRate {
+//     Single(Rate),
+//     Par(Vec<Rate>),
+//     LConcat(Box<CoreRate>, Box<CoreRate>),
+// }
 
-enum NormBARate {
-    Core(CoreRate),
-    Or(Box<NormBARate>, Box<NormBARate>),
-    And(Box<NormBARate>, Box<NormBARate>),
-}
+// enum NormBARate {
+//     Core(CoreRate),
+//     Or(Box<NormBARate>, Box<NormBARate>),
+//     And(Box<NormBARate>, Box<NormBARate>),
+// }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum BARate {
@@ -46,39 +49,67 @@ enum SubRel {
     RHS,
 }
 
-fn rate_sub(rate1: &CoreRate, rate2: &CoreRate) -> bool {
+// NOTE: This function has side effects: it mutates a Solver.
+// TODO: Is there a way to recursively build our constraints,  or should we just
+// flatten the recursive structure into, say, Vecs, and then just loop imperatively
+// over that?
+fn rate_sub_gen_constraints(rate1: &BARate, rate2: &BARate, mut s: &Solver) {
     match (rate1, rate2) {
-        (CoreRate::Single(Rate { events: e1, window: w1 }),
-         CoreRate::Single(Rate { events: e2, window: w2 })) =>
+        (BARate::Raw(r), BARate::Par(left, right)) => (),
+        (BARate::Par(left, right), BARate::Raw(r)) => (),
+        (BARate::Raw(r), BARate::LConcat(left, right)) => (),
+        (BARate::LConcat(left, right), BARate::Raw(r)) => (),
+        (BARate::LConcat(l1, r1), BARate::Par(l2, r2)) => (),
+        (BARate::Par(l1, r1), BARate::Par(l2, r2)) => (),
+        // NOTE: We should never hit this if the reduction fixpoint to a normal
+        // form works as expected and, more generally, all functions prior to
+        // this function in the call stack work as expected.
+        (_, _) => panic!("Unexpected type!")
+    }
+}
+
+// Construct SMT constraints and solve.
+fn rate_sub_solve(rate1: &BARate, rate3: &BARate) -> bool {
+    let mut solver = Solver::new();
+    rate_sub_gen_constraints(rate1, rate2, solver);
+    match solver.check() {
+        // TODO: It would be nice to produce a model in this case.
+        SatResult::Sat => true,
+        SatResult::Unsat | SatResult::Unknown => false
+    }
+}
+
+fn rate_sub(rate1: &BARate, rate2: &BARate) -> bool {
+    match (rate1, rate2) {
+        (BARate::Raw(Rate { events: e1, window: w1 }),
+         BARate::Raw(Rate { events: e2, window: w2 })) =>
             if w2 <= w1 {
                 e1 <= e2
             } else {
                 let bound = e2 / w2.div_ceil(*w1);
                 *e1 <= bound
             },
-        // TODO: We'll need to construct SMT encodings here and call out to a
-        // solver like Z3. We return true as a placeholder for now.
-        (_r1, _r2) => true
+        (r1, r2) => rate_sub_solve(r1, r2)
     }
 }
 
-fn ba_rate_sub(ba_rate1: &NormBARate, ba_rate2: &NormBARate) -> bool {
+fn ba_rate_sub(ba_rate1: &BARate, ba_rate2: &BARate) -> bool {
     match (ba_rate1, ba_rate2) {
-        (NormBARate::Core(r1), NormBARate::Core(r2)) => {
-            rate_sub(r1, r2)
-        },
-        (r, NormBARate::Or(bar1, bar2)) => {
+        (r, BARate::Or(bar1, bar2)) => {
             ba_rate_sub(r, bar1) || ba_rate_sub(r, bar2)
         },
-        (NormBARate::Or(bar1, bar2), r) => {
+        (BARate::Or(bar1, bar2), r) => {
             ba_rate_sub(bar1, r) || ba_rate_sub(bar2, r)
         },
-        (r, NormBARate::And(bar1, bar2)) => {
+        (r, BARate::And(bar1, bar2)) => {
             ba_rate_sub(r, bar1) && ba_rate_sub(r, bar2)
         }
-        (NormBARate::And(bar1, bar2), r) => {
+        (BARate::And(bar1, bar2), r) => {
             ba_rate_sub(bar1, r) && ba_rate_sub(bar2, r)
-        }
+        },
+        (r1, r2) => {
+            rate_sub(r1, r2)
+        },
     }
 }
 
@@ -244,16 +275,16 @@ fn reduce_ba_fixpoint(bar: BARate) -> BARate {
     }
 }
 
-fn normalize_ba(bar: BARate) -> NormBARate {
-    // TODO: Placeholder function for converting a fully reduce BARate to a
-    // NormBARate type, throwing an error if BARate is not actually fully
-    // reduced to normal form.
-    NormBARate::Core(CoreRate::Single(Rate{events: 10, window: 10}))
-}
+// fn normalize_ba(bar: BARate) -> NormBARate {
+//     // TODO: Placeholder function for converting a fully reduce BARate to a
+//     // NormBARate type, throwing an error if BARate is not actually fully
+//     // reduced to normal form.
+//     NormBARate::Core(CoreRate::Single(Rate{events: 10, window: 10}))
+// }
 
 fn stream_sub(sr1: &StreamRate, sr2: &StreamRate) -> bool {
-    let norm_ba_lhs = normalize_ba(convert_to_ba(sr1, &SubRel::LHS));
-    let norm_ba_rhs = normalize_ba(convert_to_ba(sr2, &SubRel::RHS));
+    let norm_ba_lhs = reduce_ba_fixpoint(convert_to_ba(sr1, &SubRel::LHS));
+    let norm_ba_rhs = reduce_ba_fixpoint(convert_to_ba(sr2, &SubRel::RHS));
     ba_rate_sub(&norm_ba_lhs, &norm_ba_rhs)
 }
 
