@@ -1,5 +1,6 @@
 use crate::z3::Solver;
 use crate::z3::SatResult;
+use crate::z3::Ast;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Rate {
@@ -23,6 +24,7 @@ struct Rate {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum BARate {
+    Sym(SymRate),
     Raw(Rate),
     Par(Box<BARate>, Box<BARate>),
     // NOTE: We should always immediately collapse Concats on the LHS of a
@@ -50,12 +52,108 @@ enum SubRel {
 }
 
 // NOTE: This function has side effects: it mutates a Solver.
-// TODO: Is there a way to recursively build our constraints,  or should we just
+// TODO: Is there a way to recursively build our constraints, or should we just
 // flatten the recursive structure into, say, Vecs, and then just loop imperatively
 // over that?
-fn rate_sub_gen_constraints(rate1: &BARate, rate2: &BARate, mut s: &Solver) {
+struct SymRate {
+    // Symbolic rate variables
+    events: Ast::Int,
+    window: Ast::Int,
+    // Metadata for "global" constraint generation
+    max_window: usize,
+    min_window: usize,
+    seen_windows: Vec<usize>,
+}
+
+fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> SymRate {
+    match rate {
+        BARate::Sym(s) => s,
+        BARate::Raw(r) => {
+            let sym_raw_n = Ast::Int.fresh_const("n");
+            let sym_raw_t = Ast::Int.fresh_const("t");
+            let Rate {events: n, window: t} = r;
+            match rel {
+                // Would be nice to have an automated way to take high-level
+                // rules and automatically compile them to these SMT assertions.
+                // I'm pretty worried that my hand-compilation here is going to
+                // be subtly wrong.
+                SubRel::LHS => {
+                    s.assert((&sym_raw_t.leq(t)).implies(&sym_raw_n.eq(n)));
+                    s.assert((&sym_raw_t.ge(t)).implies(
+                        ((&sym_raw_t % t).eq(0)).ite(
+                            &sym_raw_n.eq(n * (&sym_raw_t / t)),
+                            &sym_raw_n.eq(n * ((&sym_raw_t / t)) + 1))));
+                },
+                SubRel::RHS => {
+                    s.assert((&sym_raw_t.geq(t)).implies(&syn_raw_n.eq(n)));
+                    s.assert((&sym_raw_t.le(t)).implies(
+                        ((t % &sym_raw_t).eq(0)).ite(
+                            ((n % (t / &sym_raw_t)).eq(0)).ite(
+                                &sym_raw_n.eq(n / (t / &sym_raw_t)),
+                                &sym_raw_n.eq((n / (t / &sym_raw_t)) + 1)
+                            ),
+                            ((n % ((t / &sym_raw_t) + 1)).eq(0)).ite(
+                                &sym_raw_n.eq(n / ((t / &sym_raw_t) + 1)),
+                                &sym_raw_n.eq((n / ((t / &sym_raw_t) + 1)) + 1)
+                            )
+                        )
+                    ))
+                },
+            };
+            return SymRate {
+                events: sym_raw_n,
+                window: sym_raw_t,
+                max_window: t,
+                min_window: t,
+                seen_windows: vec![t]
+            }
+        },
+        BARate::Par(left, right) => {
+            let left_sym = rate_symbolize(left, rel, s);
+            let RateSym {
+                events: l_sym_n,
+                window: l_sym_t,
+                max_window: l_max_window,
+                min_window: l_min_window,
+                seen_windows: l_seen_windows,
+            } = left_sym;
+            let right_sym = rate_symbolize(right, s);
+            let RateSym {
+                events: r_sym_n,
+                window: r_sym_t,
+                max_window: r_max_window,
+                min_window: r_min_window,
+                seen_windows: r_seen_windows,
+            } = right_sym;
+            let sym_par_n = Ast::Int.fresh_const("n");
+            let sym_par_t = Ast::Int.fresh_const("t");
+            s.assert((&l_sym_t.eq(&r_sym_t)).implies(
+                &sym_par_t.eq(&l_sym_t).and(&sym_par_n.eq(&l_sym_n + &r_sym_n))
+            ));
+            s.assert((&l_sym_t.lt(&r_sym_t)).implies(
+                (&sym_par_t.leq(&l_sym_t)).ite(
+
+                )
+            ))
+        }
+    }
+}
+fn rate_sub_symbolize(rate1: &BARate, rate2: &BARate, mut s: &Solver) {
     match (rate1, rate2) {
-        (BARate::Raw(r), BARate::Par(left, right)) => (),
+        (BARate::Raw(r), BARate::Par(left, right)) => {
+            let sym_raw_n = Ast::Int.fresh_const("n");
+            let sym_raw_t = Ast::Int.fresh_const("t");
+            let Rate {events: n, window: t} = r;
+            // Constraints for LHS
+            s.assert((&sym_raw_t.leq(t)).implies(&sym_raw_n.eq(n)));
+            s.assert((&sym_raw_t.ge(t)).implies(
+                ((&sym_raw_t % t).eq(0)).ite(
+                    &sym_raw_n.eq(n * (&sym_raw_t / t)))));
+            // Constraints for RHS
+            let
+            s.assert();
+            //
+        },
         (BARate::Par(left, right), BARate::Raw(r)) => (),
         (BARate::Raw(r), BARate::LConcat(left, right)) => (),
         (BARate::LConcat(left, right), BARate::Raw(r)) => (),
@@ -69,9 +167,9 @@ fn rate_sub_gen_constraints(rate1: &BARate, rate2: &BARate, mut s: &Solver) {
 }
 
 // Construct SMT constraints and solve.
-fn rate_sub_solve(rate1: &BARate, rate3: &BARate) -> bool {
+fn rate_sub_solve(rate1: &BARate, rate2: &BARate) -> bool {
     let mut solver = Solver::new();
-    rate_sub_gen_constraints(rate1, rate2, solver);
+    rate_sub_symbolize(rate1, rate2, solver);
     match solver.check() {
         // TODO: It would be nice to produce a model in this case.
         SatResult::Sat => true,
@@ -152,6 +250,7 @@ fn convert_to_ba(sr: &StreamRate, rel: &SubRel) -> BARate {
 // stop when the BARate rewrites stop changing.
 fn reduce_ba(bar: BARate) -> (BARate, bool) {
      match bar {
+         BARate::Sym(_) => (bar, false),
          BARate::Raw(_) => (bar, false),
          BARate::Par(bar1, bar2) => {
             match (*bar1, *bar2) {
@@ -298,7 +397,7 @@ mod tests {
     use super::*;
 
     // TODO: Consider using a property based testing library here to at least
-    // test termination.
+    // test termination on generated BARates.
     #[test]
     fn test_reduce_ba_fixpoint() {
         let testba1 = BARate::Raw(Rate{events: 10, window: 20});
