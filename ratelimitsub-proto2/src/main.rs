@@ -66,16 +66,24 @@ struct SymRate {
 }
 
 fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> SymRate {
+    // Two helper closures to take max, min of two usizes.
+    let max = |a: usize, b: usize| -> usize {
+        if a > b {
+            a
+        } else {
+            b
+        }
+    };
+    let min = |a: usize, b: usize| -> usize {
+        if a < b {
+            a
+        } else {
+            b
+        }
+    };
     match rate {
         BARate::Sym(s) => s,
         BARate::Raw(r) => {
-            // TODO: Wouldn't we want to this case to just directly encode the
-            // exact concrete raw event and window values?
-            // Answer: Nah, the way we're doing it is right actually. When we're
-            // symbolizing in this case, we want the general case, i.e. all
-            // possible classes of window size transformations that these raw
-            // rates can have. We already handle the case where we *just* have
-            // raw rates that don't need to be symbolized earlier in the process.
             let sym_raw_n = Ast::Int.fresh_const("n");
             let sym_raw_t = Ast::Int.fresh_const("t");
             let Rate {events: n, window: t} = r;
@@ -147,24 +155,114 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> SymRate {
             // window size.
             match rel {
                 SubRel::LHS => {
+                    // l_sym_t < r_sym_t
                     s.assert((&l_sym_t.lt(&r_sym_t)).implies(
                         ((&sym_par_t.eq(&l_sym_t)).implies(
                             // Convert RHS symbolic rate to supertype with
                             // window size l_sym_t
+                            &sym_par_n.eq(&l_sym_n + &r_sym_n)
                         )).and(
                             // Convert LHS symbolic rate to supertype with
                             // window size r_sym_t
                             ((&sym_par_t.eq(&r_sym_t)).implies(
+                                &sym_par_n.eq(
+                                    &r_sym_n +
+                                        ((&r_sym_t % &l_sym_t).eq(0)).ite(
+                                            &l_sym_n * (&r_sym_t / &l_sym_t),
+                                            &l_sym_n * ((&r_sym_t / &l_sym_t) + 1)
+                                        )
+                                )
                             ))
                         )
                     ));
+                    // l_sym_t > r_sym_t
+                    // TODO: There might at least be a way to factor out this
+                    // particular reasoning into a function and then just call it
+                    // each time we need it, i.e. something like:
+                    // symbolize_window_change(smaller_w: ..., larger_w:...)
+                    // Specifically the window change reasoning with all the
+                    // annoying-to-type ceiling and floor cases.
                     s.assert((&l_sym_t.gt(&r_sym_t)).implies(
-
+                        ((&sym_par_t.eq(&l_sym_t)).implies(
+                            // Convert RHS symbolic rate to supertype with
+                            // window size l_sym_t
+                            &sym_par_n.eq(
+                                &l_sym_n +
+                                    ((&l_sym_t % &r_sym_t).eq(0)).ite(
+                                        &r_sym_n * (&l_sym_t / &r_sym_t),
+                                        &r_sym_n * ((&l_sym_t / &r_sym_t) + 1)
+                                    )
+                                )
+                            )
+                        )).and(
+                            // Convert LHS symbolic rate to supertype with
+                            // window size r_sym_t
+                            ((&sym_par_t.eq(&r_sym_t)).implies(
+                                &sym_par_n.eq(&l_sym_n + &r_sym_n)
+                        ))
                     ));
                 },
                 SubRel::RHS => {
-
+                    // l_sym_t < r_sym_t
+                    s.assert((&l_sym_t.lt(&r_sym_t)).implies(
+                        ((&sym_par_t.eq(&l_sym_t)).implies(
+                            // Convert RHS symbolic rate to subtype with
+                            // window size l_sym_t
+                            &sym_par_n.eq(
+                                &l_sym_n +
+                                    ((&r_sym_t % &l_sym_t).eq(0)).ite(
+                                        ((&r_sym_n % (&r_sym_t / &l_sym_t)).eq(0)).ite(
+                                            &r_sym_n / (&r_sym_t / &l_sym_t),
+                                            &r_sym_n / ((&r_sym_t / &l_sym_t) + 1)
+                                        ),
+                                        ((&r_sym_n % ((&r_sym_t / &l_sym_t) + 1)).eq(0)).ite(
+                                            &r_sym_n / ((&r_sym_t / &l_sym_t) + 1),
+                                            (&r_sym_n / ((&r_sym_t / &l_sym_t) + 1)) + 1,
+                                        )
+                                    )
+                            )
+                        )).and(
+                            // Convert LHS symbolic rate to subtype with
+                            // window size r_sym_t
+                            ((&sym_par_t.eq(&r_sym_t)).implies(
+                                &sym_par_n.eq(&l_sym_n + &r_sym_n)
+                            ))
+                        )
+                    ));
+                    // l_sym_t > r_sym_t
+                    s.assert((&l_sym_t.gt(&r_sym_t)).implies(
+                        ((&sym_par_t.eq(&l_sym_t)).implies(
+                            // Convert RHS symbolic rate to subtype with
+                            // window size l_sym_t
+                            &sym_par_n.eq(&l_sym_n + &r_sym_n)
+                        )).and(
+                            // Convert LHS symbolic rate to subtype with
+                            // window size r_sym_t
+                            ((&sym_par_t.eq(&r_sym_t)).implies(
+                                &sym_par_n.eq(
+                                    &r_sym_n +
+                                        ((&l_sym_t % &r_sym_t).eq(0)).ite(
+                                            ((&l_sym_n % (&l_sym_t / &r_sym_t)).eq(0)).ite(
+                                                &l_sym_n / (&l_sym_t / &r_sym_t),
+                                                &l_sym_n / ((&l_sym_t / &r_sym_t) + 1)
+                                            ),
+                                            ((&l_sym_n % ((&l_sym_t / &r_sym_t) + 1)).eq(0)).ite(
+                                                &l_sym_n / ((&l_sym_t / &r_sym_t) + 1),
+                                                (&l_sym_n / ((&l_sym_t / &r_sym_t) + 1)) + 1,
+                                            )
+                                        )
+                                )
+                            ))
+                        )
+                    ));
                 },
+            };
+            return SymRate {
+                events: sym_par_n,
+                window: sym_par_t,
+                max_window: max(l_max_window, r_max_window),
+                min_window: min(l_min_window, r_min_window),
+                seen_windows: l_seen_windows.append(r_seen_windows),
             }
         }
     }
