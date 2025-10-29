@@ -71,6 +71,11 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> SymRate {
         BARate::Raw(r) => {
             // TODO: Wouldn't we want to this case to just directly encode the
             // exact concrete raw event and window values?
+            // Answer: Nah, the way we're doing it is right actually. When we're
+            // symbolizing in this case, we want the general case, i.e. all
+            // possible classes of window size transformations that these raw
+            // rates can have. We already handle the case where we *just* have
+            // raw rates that don't need to be symbolized earlier in the process.
             let sym_raw_n = Ast::Int.fresh_const("n");
             let sym_raw_t = Ast::Int.fresh_const("t");
             let Rate {events: n, window: t} = r;
