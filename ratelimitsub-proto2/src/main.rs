@@ -69,6 +69,8 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> SymRate {
     match rate {
         BARate::Sym(s) => s,
         BARate::Raw(r) => {
+            // TODO: Wouldn't we want to this case to just directly encode the
+            // exact concrete raw event and window values?
             let sym_raw_n = Ast::Int.fresh_const("n");
             let sym_raw_t = Ast::Int.fresh_const("t");
             let Rate {events: n, window: t} = r;
@@ -109,6 +111,8 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> SymRate {
             }
         },
         BARate::Par(left, right) => {
+            let sym_par_n = Ast::Int.fresh_const("n");
+            let sym_par_t = Ast::Int.fresh_const("t");
             let left_sym = rate_symbolize(left, rel, s);
             let RateSym {
                 events: l_sym_n,
@@ -117,7 +121,7 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> SymRate {
                 min_window: l_min_window,
                 seen_windows: l_seen_windows,
             } = left_sym;
-            let right_sym = rate_symbolize(right, s);
+            let right_sym = rate_symbolize(right, rel, s);
             let RateSym {
                 events: r_sym_n,
                 window: r_sym_t,
@@ -125,21 +129,48 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> SymRate {
                 min_window: r_min_window,
                 seen_windows: r_seen_windows,
             } = right_sym;
-            let sym_par_n = Ast::Int.fresh_const("n");
-            let sym_par_t = Ast::Int.fresh_const("t");
+            // If symbolic windows on left and right hand sides are equal, then
+            // we can immediately just sum events.
             s.assert((&l_sym_t.eq(&r_sym_t)).implies(
                 &sym_par_t.eq(&l_sym_t).and(&sym_par_n.eq(&l_sym_n + &r_sym_n))
             ));
-            s.assert((&l_sym_t.lt(&r_sym_t)).implies(
-                (&sym_par_t.leq(&l_sym_t)).ite(
+            // New symbolic window for parallel must be equal to one of the
+            // existing left or right symbolic windows.
+            s.assert((&sym_par_t.eq(&l_sym_t)).or(&sym_par_t.eq(&r_sym_t)));
+            // Otherwise, we have some sub/super-type specific (i.e. left and
+            // right hand side specific) rules for conversion to a common
+            // window size.
+            match rel {
+                SubRel::LHS => {
+                    s.assert((&l_sym_t.lt(&r_sym_t)).implies(
+                        ((&sym_par_t.eq(&l_sym_t)).implies(
+                            // Convert RHS symbolic rate to supertype with
+                            // window size l_sym_t
+                        )).and(
+                            // Convert LHS symbolic rate to supertype with
+                            // window size r_sym_t
+                            ((&sym_par_t.eq(&r_sym_t)).implies(
+                            ))
+                        )
+                    ));
+                    s.assert((&l_sym_t.gt(&r_sym_t)).implies(
 
-                )
-            ))
+                    ));
+                },
+                SubRel::RHS => {
+
+                },
+            }
         }
     }
 }
 fn rate_sub_symbolize(rate1: &BARate, rate2: &BARate, mut s: &Solver) {
     match (rate1, rate2) {
+        // TODO: We probably just want to call rate_symbolize here on each side
+        // and then do the stuff that involves the actual subtyping comparison
+        // between both sides, i.e. coalescing all the seen windows, min and max
+        // windows, and then adding the global constraints involving everything
+        // in the subtyping relation to the solver.
         (BARate::Raw(r), BARate::Par(left, right)) => {
             let sym_raw_n = Ast::Int.fresh_const("n");
             let sym_raw_t = Ast::Int.fresh_const("t");
