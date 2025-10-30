@@ -62,10 +62,11 @@ struct SymRate {
     // Metadata for "global" constraint generation
     max_window: usize,
     min_window: usize,
-    seen_windows: Vec<usize>,
+    seen_concrete_windows: Vec<usize>,
+    seen_symbolic_windows: Vec<Ast::Int>,
 }
 
-fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> SymRate {
+fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> Vec<SymRate> {
     // Two helper closures to take max, min of two usizes.
     let max = |a: usize, b: usize| -> usize {
         if a > b {
@@ -120,7 +121,8 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> SymRate {
                 window: sym_raw_t,
                 max_window: t,
                 min_window: t,
-                seen_windows: vec![t]
+                seen_concrete_windows: vec![t],
+                seen_symbolic_windows: Vec::new(),
             }
         },
         BARate::Par(left, right) => {
@@ -132,7 +134,8 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> SymRate {
                 window: l_sym_t,
                 max_window: l_max_window,
                 min_window: l_min_window,
-                seen_windows: l_seen_windows,
+                seen_concrete_windows: l_seen_concrete_windows,
+                seen_symbolic_windows: l_seen_symbolic_windows,
             } = left_sym;
             let right_sym = rate_symbolize(right, rel, s);
             let RateSym {
@@ -140,7 +143,8 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> SymRate {
                 window: r_sym_t,
                 max_window: r_max_window,
                 min_window: r_min_window,
-                seen_windows: r_seen_windows,
+                seen_concrete_windows: r_seen_concrete_windows,
+                seen_symbolic_windows: r_seen_symbolic_windows,
             } = right_sym;
             // If symbolic windows on left and right hand sides are equal, then
             // we can immediately just sum events.
@@ -262,42 +266,39 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> SymRate {
                 window: sym_par_t,
                 max_window: max(l_max_window, r_max_window),
                 min_window: min(l_min_window, r_min_window),
-                seen_windows: l_seen_windows.append(r_seen_windows),
+                seen_concrete_windows: l_seen_concrete_windows.append(r_seen_concrete_windows),
+                seen_symbolic_windows: r_seen_symbolic_windows.append(r_seen_symbolic_windows),
             }
+        },
+        BARate::LConcat(left, right) => {
+            let left_sym = rate_symbolize(left, rel, s);
+            let right_sym = rate_symbolize(right, rel, s);
+            // TODO: Need to handle vectors (which correspond to And, although
+            // this is unfortunately implicit in the current implementation) of
+            // symbolic rates. For LConcat, we can distribute, do the thing for
+            // individual pairs of symbolic rates, then combine again into a
+            // larger vector to pass along.
+            // TODO: Also need to handle vectors for the other cases in this
+            // function.
+        },
+        _ => {
+            // This is where I wish we could prove this statement in the code
+            // instead of just throwing an exception. Maybe if I designed the
+            // types a bit better, it would help...but I think this is where
+            // dependent types would be very nice.
+            panic!("Unexpected type constructor: And, Or should not appear here.")
         }
     }
 }
 fn rate_sub_symbolize(rate1: &BARate, rate2: &BARate, mut s: &Solver) {
-    match (rate1, rate2) {
-        // TODO: We probably just want to call rate_symbolize here on each side
-        // and then do the stuff that involves the actual subtyping comparison
-        // between both sides, i.e. coalescing all the seen windows, min and max
-        // windows, and then adding the global constraints involving everything
-        // in the subtyping relation to the solver.
-        (BARate::Raw(r), BARate::Par(left, right)) => {
-            let sym_raw_n = Ast::Int.fresh_const("n");
-            let sym_raw_t = Ast::Int.fresh_const("t");
-            let Rate {events: n, window: t} = r;
-            // Constraints for LHS
-            s.assert((&sym_raw_t.leq(t)).implies(&sym_raw_n.eq(n)));
-            s.assert((&sym_raw_t.ge(t)).implies(
-                ((&sym_raw_t % t).eq(0)).ite(
-                    &sym_raw_n.eq(n * (&sym_raw_t / t)))));
-            // Constraints for RHS
-            let
-            s.assert();
-            //
-        },
-        (BARate::Par(left, right), BARate::Raw(r)) => (),
-        (BARate::Raw(r), BARate::LConcat(left, right)) => (),
-        (BARate::LConcat(left, right), BARate::Raw(r)) => (),
-        (BARate::LConcat(l1, r1), BARate::Par(l2, r2)) => (),
-        (BARate::Par(l1, r1), BARate::Par(l2, r2)) => (),
-        // NOTE: We should never hit this if the reduction fixpoint to a normal
-        // form works as expected and, more generally, all functions prior to
-        // this function in the call stack work as expected.
-        (_, _) => panic!("Unexpected type!")
-    }
+    // TODO: We probably just want to call rate_symbolize here on each side
+    // and then do the stuff that involves the actual subtyping comparison
+    // between both sides, i.e. coalescing all the seen windows, min and max
+    // windows, and then adding the global constraints involving everything
+    // in the subtyping relation to the solver.
+    let left_rate_sym = rate_symbolize(rate1, &SubRel::LHS, s);
+    let right_rate_sym = rate_symbolize(rate2, &SubRel::RHS, s);
+    // Coalesce and add final constraints
 }
 
 // Construct SMT constraints and solve.
