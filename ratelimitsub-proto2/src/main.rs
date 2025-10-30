@@ -116,170 +116,224 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> Vec<SymRate> {
                     ))
                 },
             };
-            return SymRate {
+            return vec![SymRate {
                 events: sym_raw_n,
                 window: sym_raw_t,
                 max_window: t,
                 min_window: t,
                 seen_concrete_windows: vec![t],
                 seen_symbolic_windows: Vec::new(),
-            }
+            }]
         },
         BARate::Par(left, right) => {
-            let sym_par_n = Ast::Int.fresh_const("n");
-            let sym_par_t = Ast::Int.fresh_const("t");
             let left_sym = rate_symbolize(left, rel, s);
-            let RateSym {
-                events: l_sym_n,
-                window: l_sym_t,
-                max_window: l_max_window,
-                min_window: l_min_window,
-                seen_concrete_windows: l_seen_concrete_windows,
-                seen_symbolic_windows: l_seen_symbolic_windows,
-            } = left_sym;
             let right_sym = rate_symbolize(right, rel, s);
-            let RateSym {
-                events: r_sym_n,
-                window: r_sym_t,
-                max_window: r_max_window,
-                min_window: r_min_window,
-                seen_concrete_windows: r_seen_concrete_windows,
-                seen_symbolic_windows: r_seen_symbolic_windows,
-            } = right_sym;
-            // If symbolic windows on left and right hand sides are equal, then
-            // we can immediately just sum events.
-            s.assert((&l_sym_t.eq(&r_sym_t)).implies(
-                &sym_par_t.eq(&l_sym_t).and(&sym_par_n.eq(&l_sym_n + &r_sym_n))
-            ));
-            // New symbolic window for parallel must be equal to one of the
-            // existing left or right symbolic windows.
-            s.assert((&sym_par_t.eq(&l_sym_t)).or(&sym_par_t.eq(&r_sym_t)));
-            // Otherwise, we have some sub/super-type specific (i.e. left and
-            // right hand side specific) rules for conversion to a common
-            // window size.
-            match rel {
-                SubRel::LHS => {
-                    // l_sym_t < r_sym_t
-                    s.assert((&l_sym_t.lt(&r_sym_t)).implies(
-                        ((&sym_par_t.eq(&l_sym_t)).implies(
-                            // Convert RHS symbolic rate to supertype with
-                            // window size l_sym_t
-                            &sym_par_n.eq(&l_sym_n + &r_sym_n)
-                        )).and(
-                            // Convert LHS symbolic rate to supertype with
-                            // window size r_sym_t
-                            ((&sym_par_t.eq(&r_sym_t)).implies(
-                                &sym_par_n.eq(
-                                    &r_sym_n +
-                                        ((&r_sym_t % &l_sym_t).eq(0)).ite(
-                                            &l_sym_n * (&r_sym_t / &l_sym_t),
-                                            &l_sym_n * ((&r_sym_t / &l_sym_t) + 1)
+            let return_sym: Vec<RateSym>;
+            for lsym in &left_sym.to_iter() {
+                for rsym in &right_sym.to_iter() {
+                    let sym_par_n = Ast::Int.fresh_const("n");
+                    let sym_par_t = Ast::Int.fresh_const("t");
+                    let RateSym {
+                        events: l_sym_n,
+                        window: l_sym_t,
+                        max_window: l_max_window,
+                        min_window: l_min_window,
+                        seen_concrete_windows: l_seen_concrete_windows,
+                        seen_symbolic_windows: l_seen_symbolic_windows,
+                    } = lsym;
+                    let RateSym {
+                        events: r_sym_n,
+                        window: r_sym_t,
+                        max_window: r_max_window,
+                        min_window: r_min_window,
+                        seen_concrete_windows: r_seen_concrete_windows,
+                        seen_symbolic_windows: r_seen_symbolic_windows,
+                    } = rsym;
+                    // If symbolic windows on left and right hand sides are equal, then
+                    // we can immediately just sum events.
+                    s.assert((&l_sym_t.eq(&r_sym_t)).implies(
+                        &sym_par_t.eq(&l_sym_t).and(&sym_par_n.eq(&l_sym_n + &r_sym_n))
+                    ));
+                    // New symbolic window for parallel must be equal to one of the
+                    // existing left or right symbolic windows.
+                    s.assert((&sym_par_t.eq(&l_sym_t)).or(&sym_par_t.eq(&r_sym_t)));
+                    // Otherwise, we have some sub/super-type specific (i.e. left and
+                    // right hand side specific) rules for conversion to a common
+                    // window size.
+                    match rel {
+                        SubRel::LHS => {
+                            // l_sym_t < r_sym_t
+                            s.assert((&l_sym_t.lt(&r_sym_t)).implies(
+                                ((&sym_par_t.eq(&l_sym_t)).implies(
+                                    // Convert RHS symbolic rate to supertype with
+                                    // window size l_sym_t
+                                    &sym_par_n.eq(&l_sym_n + &r_sym_n)
+                                )).and(
+                                    // Convert LHS symbolic rate to supertype with
+                                    // window size r_sym_t
+                                    ((&sym_par_t.eq(&r_sym_t)).implies(
+                                        &sym_par_n.eq(
+                                            &r_sym_n +
+                                                ((&r_sym_t % &l_sym_t).eq(0)).ite(
+                                                    &l_sym_n * (&r_sym_t / &l_sym_t),
+                                                    &l_sym_n * ((&r_sym_t / &l_sym_t) + 1)
+                                                )
                                         )
+                                    ))
                                 )
-                            ))
-                        )
-                    ));
-                    // l_sym_t > r_sym_t
-                    // TODO: There might at least be a way to factor out this
-                    // particular reasoning into a function and then just call it
-                    // each time we need it, i.e. something like:
-                    // symbolize_window_change(smaller_w: ..., larger_w:...)
-                    // Specifically the window change reasoning with all the
-                    // annoying-to-type ceiling and floor cases.
-                    s.assert((&l_sym_t.gt(&r_sym_t)).implies(
-                        ((&sym_par_t.eq(&l_sym_t)).implies(
-                            // Convert RHS symbolic rate to supertype with
-                            // window size l_sym_t
-                            &sym_par_n.eq(
-                                &l_sym_n +
-                                    ((&l_sym_t % &r_sym_t).eq(0)).ite(
-                                        &r_sym_n * (&l_sym_t / &r_sym_t),
-                                        &r_sym_n * ((&l_sym_t / &r_sym_t) + 1)
-                                    )
-                                )
-                            )
-                        )).and(
-                            // Convert LHS symbolic rate to supertype with
-                            // window size r_sym_t
-                            ((&sym_par_t.eq(&r_sym_t)).implies(
-                                &sym_par_n.eq(&l_sym_n + &r_sym_n)
-                        ))
-                    ));
-                },
-                SubRel::RHS => {
-                    // l_sym_t < r_sym_t
-                    s.assert((&l_sym_t.lt(&r_sym_t)).implies(
-                        ((&sym_par_t.eq(&l_sym_t)).implies(
-                            // Convert RHS symbolic rate to subtype with
-                            // window size l_sym_t
-                            &sym_par_n.eq(
-                                &l_sym_n +
-                                    ((&r_sym_t % &l_sym_t).eq(0)).ite(
-                                        ((&r_sym_n % (&r_sym_t / &l_sym_t)).eq(0)).ite(
-                                            &r_sym_n / (&r_sym_t / &l_sym_t),
-                                            &r_sym_n / ((&r_sym_t / &l_sym_t) + 1)
-                                        ),
-                                        ((&r_sym_n % ((&r_sym_t / &l_sym_t) + 1)).eq(0)).ite(
-                                            &r_sym_n / ((&r_sym_t / &l_sym_t) + 1),
-                                            (&r_sym_n / ((&r_sym_t / &l_sym_t) + 1)) + 1,
-                                        )
-                                    )
-                            )
-                        )).and(
-                            // Convert LHS symbolic rate to subtype with
-                            // window size r_sym_t
-                            ((&sym_par_t.eq(&r_sym_t)).implies(
-                                &sym_par_n.eq(&l_sym_n + &r_sym_n)
-                            ))
-                        )
-                    ));
-                    // l_sym_t > r_sym_t
-                    s.assert((&l_sym_t.gt(&r_sym_t)).implies(
-                        ((&sym_par_t.eq(&l_sym_t)).implies(
-                            // Convert RHS symbolic rate to subtype with
-                            // window size l_sym_t
-                            &sym_par_n.eq(&l_sym_n + &r_sym_n)
-                        )).and(
-                            // Convert LHS symbolic rate to subtype with
-                            // window size r_sym_t
-                            ((&sym_par_t.eq(&r_sym_t)).implies(
-                                &sym_par_n.eq(
-                                    &r_sym_n +
-                                        ((&l_sym_t % &r_sym_t).eq(0)).ite(
-                                            ((&l_sym_n % (&l_sym_t / &r_sym_t)).eq(0)).ite(
-                                                &l_sym_n / (&l_sym_t / &r_sym_t),
-                                                &l_sym_n / ((&l_sym_t / &r_sym_t) + 1)
-                                            ),
-                                            ((&l_sym_n % ((&l_sym_t / &r_sym_t) + 1)).eq(0)).ite(
-                                                &l_sym_n / ((&l_sym_t / &r_sym_t) + 1),
-                                                (&l_sym_n / ((&l_sym_t / &r_sym_t) + 1)) + 1,
+                            ));
+                            // l_sym_t > r_sym_t
+                            // TODO: There might at least be a way to factor out this
+                            // particular reasoning into a function and then just call it
+                            // each time we need it, i.e. something like:
+                            // symbolize_window_change(smaller_w: ..., larger_w:...)
+                            // Specifically the window change reasoning with all the
+                            // annoying-to-type ceiling and floor cases.
+                            s.assert((&l_sym_t.gt(&r_sym_t)).implies(
+                                ((&sym_par_t.eq(&l_sym_t)).implies(
+                                    // Convert RHS symbolic rate to supertype with
+                                    // window size l_sym_t
+                                    &sym_par_n.eq(
+                                        &l_sym_n +
+                                            ((&l_sym_t % &r_sym_t).eq(0)).ite(
+                                                &r_sym_n * (&l_sym_t / &r_sym_t),
+                                                &r_sym_n * ((&l_sym_t / &r_sym_t) + 1)
                                             )
                                         )
+                                    )
+                                )).and(
+                                    // Convert LHS symbolic rate to supertype with
+                                    // window size r_sym_t
+                                    ((&sym_par_t.eq(&r_sym_t)).implies(
+                                        &sym_par_n.eq(&l_sym_n + &r_sym_n)
+                                ))
+                            ));
+                        },
+                        SubRel::RHS => {
+                            // l_sym_t < r_sym_t
+                            s.assert((&l_sym_t.lt(&r_sym_t)).implies(
+                                ((&sym_par_t.eq(&l_sym_t)).implies(
+                                    // Convert RHS symbolic rate to subtype with
+                                    // window size l_sym_t
+                                    &sym_par_n.eq(
+                                        &l_sym_n +
+                                            ((&r_sym_t % &l_sym_t).eq(0)).ite(
+                                                ((&r_sym_n % (&r_sym_t / &l_sym_t)).eq(0)).ite(
+                                                    &r_sym_n / (&r_sym_t / &l_sym_t),
+                                                    &r_sym_n / ((&r_sym_t / &l_sym_t) + 1)
+                                                ),
+                                                ((&r_sym_n % ((&r_sym_t / &l_sym_t) + 1)).eq(0)).ite(
+                                                    &r_sym_n / ((&r_sym_t / &l_sym_t) + 1),
+                                                    (&r_sym_n / ((&r_sym_t / &l_sym_t) + 1)) + 1,
+                                                )
+                                            )
+                                    )
+                                )).and(
+                                    // Convert LHS symbolic rate to subtype with
+                                    // window size r_sym_t
+                                    ((&sym_par_t.eq(&r_sym_t)).implies(
+                                        &sym_par_n.eq(&l_sym_n + &r_sym_n)
+                                    ))
                                 )
-                            ))
-                        )
-                    ));
-                },
+                            ));
+                            // l_sym_t > r_sym_t
+                            s.assert((&l_sym_t.gt(&r_sym_t)).implies(
+                                ((&sym_par_t.eq(&l_sym_t)).implies(
+                                    // Convert RHS symbolic rate to subtype with
+                                    // window size l_sym_t
+                                    &sym_par_n.eq(&l_sym_n + &r_sym_n)
+                                )).and(
+                                    // Convert LHS symbolic rate to subtype with
+                                    // window size r_sym_t
+                                    ((&sym_par_t.eq(&r_sym_t)).implies(
+                                        &sym_par_n.eq(
+                                            &r_sym_n +
+                                                ((&l_sym_t % &r_sym_t).eq(0)).ite(
+                                                    ((&l_sym_n % (&l_sym_t / &r_sym_t)).eq(0)).ite(
+                                                        &l_sym_n / (&l_sym_t / &r_sym_t),
+                                                        &l_sym_n / ((&l_sym_t / &r_sym_t) + 1)
+                                                    ),
+                                                    ((&l_sym_n % ((&l_sym_t / &r_sym_t) + 1)).eq(0)).ite(
+                                                        &l_sym_n / ((&l_sym_t / &r_sym_t) + 1),
+                                                        (&l_sym_n / ((&l_sym_t / &r_sym_t) + 1)) + 1,
+                                                    )
+                                                )
+                                        )
+                                    ))
+                                )
+                            ));
+                        },
+                    };
+                    let par_rate_sym = SymRate {
+                        events: sym_par_n,
+                        window: sym_par_t,
+                        max_window: max(l_max_window, r_max_window),
+                        min_window: min(l_min_window, r_min_window),
+                        seen_concrete_windows: l_seen_concrete_windows.append(r_seen_concrete_windows),
+                        seen_symbolic_windows: r_seen_symbolic_windows.append(r_seen_symbolic_windows),
+                    };
+                    return_sym.push(par_rate_sym);
+                }
             };
-            return SymRate {
-                events: sym_par_n,
-                window: sym_par_t,
-                max_window: max(l_max_window, r_max_window),
-                min_window: min(l_min_window, r_min_window),
-                seen_concrete_windows: l_seen_concrete_windows.append(r_seen_concrete_windows),
-                seen_symbolic_windows: r_seen_symbolic_windows.append(r_seen_symbolic_windows),
-            }
+            return return_sym
         },
         BARate::LConcat(left, right) => {
+            // NOTE: rel here should only be SubRel::LHS. Again, it would be
+            // nice to prove this in the code itself, but I'll just write this
+            // note here now to call this out.
             let left_sym = rate_symbolize(left, rel, s);
             let right_sym = rate_symbolize(right, rel, s);
-            // TODO: Need to handle vectors (which correspond to And, although
-            // this is unfortunately implicit in the current implementation) of
-            // symbolic rates. For LConcat, we can distribute, do the thing for
-            // individual pairs of symbolic rates, then combine again into a
-            // larger vector to pass along.
-            // TODO: Also need to handle vectors for the other cases in this
-            // function.
+            // OK, I've succumbed here to writing very imperative code. There
+            // might be a way to recover a more functional style, although it
+            // might not be super nice in Rust.
+            let return_sym: Vec<RateSym>;
+            for lsym in &left_sym.to_iter() {
+                for rsym in &right_sym.to_iter() {
+                    let RateSym {
+                        events: l_sym_n,
+                        window: l_sym_t,
+                        max_window: l_max_window,
+                        min_window: l_min_window,
+                        seen_concrete_windows: l_seen_concrete_windows,
+                        seen_symbolic_windows: l_seen_symbolic_windows,
+                    } = lsym;
+                    let RateSym {
+                        events: r_sym_n,
+                        window: r_sym_t,
+                        max_window: r_max_window,
+                        min_window: r_min_window,
+                        seen_concrete_windows: r_seen_concrete_windows,
+                        seen_symbolic_windows: r_seen_symbolic_windows,
+                    } = rsym;
+                    let cross_sym_n = Ast::Int.fresh_const("n");
+                    let cross_sym_t = Ast::Int.fresh_const("t");
+                    // Add constraints for crossover period
+                    s.assert(&cross_sym_n.eq(&l_sym_n + &r_sym_n));
+                    s.assert(&cross_sym_t.eq(&l_sym_n + &r_sym_n));
+                    let cross_rate_sym = RateSym {
+                        events: cross_sym_n,
+                        window: cross_sym_t,
+                        max_window: max(l_max_window, r_max_window),
+                        min_window: min(l_min_window, r_min_window),
+                        seen_concrete_windows: l_seen_concrete_windows.append(
+                            r_seen_concrete_windows),
+                        // Add the symbolic window generated by the crossover
+                        // region to the set of seen symbolic windows for use
+                        // in the overall subtyping constraint as a possible
+                        // common window size. It's actually unclear to me if
+                        // this is necessary, or if we can get away with just
+                        // tracking concrete window sizes, but I'll probably
+                        // need to prove this. I do suspect right now that it
+                        // is necessary, so I'm including it here.
+                        seen_symbolic_windows: (l_seen_symbolic_windows.append(
+                        r_seen_symbolic_windows)).push(cross_sym_t),
+                    };
+                    return_sym.push(left_sym);
+                    return_sym.push(cross_rate_sym);
+                    return_sym.push(right_sym);
+                }
+            }
+            return return_sym
         },
         _ => {
             // This is where I wish we could prove this statement in the code
@@ -290,6 +344,7 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> Vec<SymRate> {
         }
     }
 }
+
 fn rate_sub_symbolize(rate1: &BARate, rate2: &BARate, mut s: &Solver) {
     // TODO: We probably just want to call rate_symbolize here on each side
     // and then do the stuff that involves the actual subtyping comparison
