@@ -66,22 +66,23 @@ struct SymRate {
     seen_symbolic_windows: Vec<Ast::Int>,
 }
 
+// Two helper functions to take max, min of two usizes
+fn max (a: usize, b: usize) -> usize {
+    if a > b {
+        a
+    } else {
+        b
+    }
+}
+fn min (a: usize, b: usize) -> usize {
+    if a < b {
+        a
+    } else {
+        b
+    }
+}
+
 fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> Vec<SymRate> {
-    // Two helper closures to take max, min of two usizes.
-    let max = |a: usize, b: usize| -> usize {
-        if a > b {
-            a
-        } else {
-            b
-        }
-    };
-    let min = |a: usize, b: usize| -> usize {
-        if a < b {
-            a
-        } else {
-            b
-        }
-    };
     match rate {
         BARate::Sym(s) => s,
         BARate::Raw(r) => {
@@ -354,6 +355,49 @@ fn rate_sub_symbolize(rate1: &BARate, rate2: &BARate, mut s: &Solver) {
     let left_rate_sym = rate_symbolize(rate1, &SubRel::LHS, s);
     let right_rate_sym = rate_symbolize(rate2, &SubRel::RHS, s);
     // Coalesce and add final constraints
+    for lsym in &left_rate_sym.to_iter() {
+        for rsym in &right_rate_sym.to_iter() {
+            let RateSym {
+                events: l_sym_n,
+                window: l_sym_t,
+                max_window: l_max_window,
+                min_window: l_min_window,
+                seen_concrete_windows: l_seen_concrete_windows,
+                seen_symbolic_windows: l_seen_symbolic_windows,
+            } = lsym;
+            let RateSym {
+                events: r_sym_n,
+                window: r_sym_t,
+                max_window: r_max_window,
+                min_window: r_min_window,
+                seen_concrete_windows: r_seen_concrete_windows,
+                seen_symbolic_windows: r_seen_symbolic_windows,
+            } = rsym;
+            s.assert(&l_sym_t.eq(&r_sym_t));
+            let overall_max_window = max(l_max_window, r_min_window);
+            let overall_min_window = min(l_min_window, r_min_window);
+            s.assert(&l_sym_t.leq(overall_max_window));
+            s.assert(&l_sym_t.geq(overall_min_window));
+            s.assert(&l_sym_n.leq(&r_sym_n));
+            // TODO: Add constraints for possible window sizes --- must be one
+            // of seen concrete windows or seen symbolic windows.
+            let all_concrete_windows = l_seen_concrete_windows.append(r_seen_concrete_windows);
+            let all_symbolic_windows = l_seen_symbolic_windows.append(r_seen_symbolic_windows);
+            // NOTE: How do we do polymorphism in Rust?
+            // We could probably construct a variant type for generic windows,
+            // i.e. concrete or symbolic, and then do stuff on that type.
+            let concrete_window_constraint = |cw: usize| -> Ast::Bool {
+                &l_sym_t.eq(cw)
+            };
+            let symbolic_window_constraint = |sw: Ast::Int| -> Ast::Bool {
+                &l_sym_t.eq(&sw)
+            };
+            let all_window_constraints =
+                (all_concrete_windows.into_iter().map(concrete_window_constraint).collect()).
+                append(all_symbolic_windows.into_iter().map(symbolic_window_constraint).collect());
+            s.assert(or(&all_window_constraints[..]));
+        }
+    }
 }
 
 // Construct SMT constraints and solve.
