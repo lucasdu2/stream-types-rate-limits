@@ -77,7 +77,7 @@ fn min(a: usize, b: usize) -> usize {
     if a < b { a } else { b }
 }
 
-fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> Vec<SymRate> {
+fn rate_symbolize(rate: &BARate, rel: &SubRel, s: &Solver) -> Vec<SymRate> {
     match rate {
         BARate::Sym(s) => vec![s.clone()],
         BARate::Raw(r) => {
@@ -95,23 +95,23 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> Vec<SymRate> {
                 // I'm pretty worried that my hand-compilation here is going to
                 // be subtly wrong.
                 SubRel::LHS => {
-                    s.assert((sym_raw_t.le(t)).implies(sym_raw_n.eq(n)));
-                    s.assert((sym_raw_t.ge(t)).implies(((sym_raw_t % t).eq(0)).ite(
-                        &sym_raw_n.eq(n * (sym_raw_t / t)),
-                        &sym_raw_n.eq(n * (sym_raw_t / t) + 1),
+                    s.assert((sym_raw_t.le(&t)).implies(sym_raw_n.eq(&n)));
+                    s.assert((sym_raw_t.ge(&t)).implies(((&sym_raw_t % &t).eq(0)).ite(
+                        &sym_raw_n.eq(&n * (&sym_raw_t / &t)),
+                        &sym_raw_n.eq(&n * (&sym_raw_t / &t) + 1),
                     )));
                 }
                 SubRel::RHS => {
-                    s.assert((sym_raw_t.ge(t)).implies(sym_raw_n.eq(n)));
-                    s.assert((sym_raw_t.le(t)).implies(
-                        ((t % sym_raw_t).eq(0)).ite(
-                            &(((n % (t / sym_raw_t)).eq(0)).ite(
-                                &sym_raw_n.eq(n / (t / sym_raw_t)),
-                                &sym_raw_n.eq((n / (t / sym_raw_t)) + 1)
+                    s.assert((sym_raw_t.ge(&t)).implies(sym_raw_n.eq(&n)));
+                    s.assert((sym_raw_t.le(&t)).implies(
+                        ((&t % &sym_raw_t).eq(0)).ite(
+                            &(((&n % (&t / &sym_raw_t)).eq(0)).ite(
+                                &sym_raw_n.eq(&n / (&t / &sym_raw_t)),
+                                &sym_raw_n.eq((&n / (&t / &sym_raw_t)) + 1)
                             )),
-                            &(((n % ((t / &sym_raw_t) + 1)).eq(0)).ite(
-                                &sym_raw_n.eq(n / ((t / sym_raw_t) + 1)),
-                                &sym_raw_n.eq((n / ((t / sym_raw_t) + 1)) + 1)
+                            &(((&n % ((&t / &sym_raw_t) + 1)).eq(0)).ite(
+                                &sym_raw_n.eq(&n / ((&t / &sym_raw_t) + 1)),
+                                &sym_raw_n.eq((&n / ((&t / &sym_raw_t) + 1)) + 1)
                             )))))
                 }
             };
@@ -127,9 +127,9 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> Vec<SymRate> {
         BARate::Par(left, right) => {
             let left_sym = rate_symbolize(left, rel, s);
             let right_sym = rate_symbolize(right, rel, s);
-            let return_sym: Vec<SymRate>;
-            for lsym in left_sym.into_iter() {
-                for rsym in right_sym.into_iter() {
+            let mut return_sym: Vec<SymRate> = Vec::new();
+            for lsym in left_sym.iter() {
+                for rsym in right_sym.iter() {
                     let sym_par_n = Int::fresh_const("n");
                     let sym_par_t = Int::fresh_const("t");
                     let SymRate {
@@ -188,13 +188,13 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> Vec<SymRate> {
                             // Specifically the window change reasoning with all the
                             // annoying-to-type ceiling and floor cases.
                             s.assert(
-                                (&l_sym_t.gt(&r_sym_t))
+                                (&l_sym_t.gt(r_sym_t))
                                     .implies(
                                         Bool::and(
                                             &[(sym_par_t.eq(l_sym_t)).implies(
                                                 // Convert RHS symbolic rate to supertype with
                                                 // window size l_sym_t
-                                                sym_par_n.eq(&l_sym_n +
+                                                sym_par_n.eq(l_sym_n +
                                                              (&(l_sym_t % r_sym_t).eq(0)).ite(
                                                                  &(r_sym_n * (l_sym_t / r_sym_t)),
                                                                  &(r_sym_n * ((l_sym_t / r_sym_t) + 1))))),
@@ -206,7 +206,7 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> Vec<SymRate> {
                         SubRel::RHS => {
                             // l_sym_t < r_sym_t
                             s.assert(
-                                (&l_sym_t.lt(&r_sym_t)).implies(
+                                (&l_sym_t.lt(r_sym_t)).implies(
                                     Bool::and(
                                         &[((sym_par_t.eq(l_sym_t)).implies(
                                             // Convert RHS symbolic rate to subtype with
@@ -224,7 +224,7 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> Vec<SymRate> {
                                               sym_par_n.eq(l_sym_n + r_sym_n))])));
                             // l_sym_t > r_sym_t
                             s.assert(
-                                (&l_sym_t.gt(&r_sym_t)).implies(
+                                (&l_sym_t.gt(r_sym_t)).implies(
                                     Bool::and(
                                         &[(sym_par_t.eq(l_sym_t)).implies(
                                             // Convert RHS symbolic rate to subtype with
@@ -243,15 +243,21 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> Vec<SymRate> {
                                                           &((l_sym_n / ((l_sym_t / r_sym_t) + 1)) + 1))))))])));
                         }
                     };
-                    l_seen_concrete_windows.append(&mut r_seen_concrete_windows);
-                    l_seen_symbolic_windows.append(&mut r_seen_symbolic_windows);
+                    // More imperative stuff that I don't like, but I don't know
+                    // how to use RCs yet so it's OK.
+                    let mut all_seen_concrete_windows = Vec::new();
+                    all_seen_concrete_windows.extend_from_slice(&l_seen_concrete_windows[..]);
+                    all_seen_concrete_windows.extend_from_slice(&r_seen_concrete_windows[..]);
+                    let mut all_seen_symbolic_windows = Vec::new();
+                    all_seen_symbolic_windows.extend_from_slice(&l_seen_symbolic_windows[..]);
+                    all_seen_symbolic_windows.extend_from_slice(&r_seen_symbolic_windows[..]);
                     let par_rate_sym = SymRate {
                         events: sym_par_n,
                         window: sym_par_t,
-                        max_window: max(l_max_window, r_max_window),
-                        min_window: min(l_min_window, r_min_window),
-                        seen_concrete_windows: l_seen_concrete_windows,
-                        seen_symbolic_windows: r_seen_symbolic_windows,
+                        max_window: max(*l_max_window, *r_max_window),
+                        min_window: min(*l_min_window, *r_min_window),
+                        seen_concrete_windows: all_seen_concrete_windows,
+                        seen_symbolic_windows: all_seen_symbolic_windows,
                     };
                     return_sym.push(par_rate_sym);
                 }
@@ -267,9 +273,9 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> Vec<SymRate> {
             // OK, I've succumbed here to writing very imperative code. There
             // might be a way to recover a more functional style, although it
             // might not be super nice in Rust.
-            let return_sym: Vec<SymRate>;
-            for lsym in left_sym.into_iter() {
-                for rsym in right_sym.into_iter() {
+            let mut return_sym: Vec<SymRate> = Vec::new();
+            for lsym in left_sym.iter() {
+                for rsym in right_sym.iter() {
                     let SymRate {
                         events: l_sym_n,
                         window: l_sym_t,
@@ -289,17 +295,26 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> Vec<SymRate> {
                     let cross_sym_n = Int::fresh_const("n");
                     let cross_sym_t = Int::fresh_const("t");
                     // Add constraints for crossover period
-                    s.assert(&cross_sym_n.eq(&l_sym_n + &r_sym_n));
-                    s.assert(&cross_sym_t.eq(&l_sym_n + &r_sym_n));
-                    l_seen_concrete_windows.append(&mut r_seen_concrete_windows);
-                    l_seen_symbolic_windows.append(&mut r_seen_symbolic_windows);
-                    l_seen_symbolic_windows.push(cross_sym_t);
+                    s.assert(&cross_sym_n.eq(l_sym_n + r_sym_n));
+                    s.assert(&cross_sym_t.eq(l_sym_t + r_sym_t));
+                    // More imperative stuff that I don't like, but I don't know
+                    // how to use RCs yet so it's OK.
+                    // TODO: This is copy-pasted from above; there definitely
+                    // is opportunity here to better abstract and modularize
+                    // the code.
+                    let mut all_seen_concrete_windows = Vec::new();
+                    all_seen_concrete_windows.extend_from_slice(&l_seen_concrete_windows[..]);
+                    all_seen_concrete_windows.extend_from_slice(&r_seen_concrete_windows[..]);
+                    let mut all_seen_symbolic_windows = Vec::new();
+                    all_seen_symbolic_windows.extend_from_slice(&l_seen_symbolic_windows[..]);
+                    all_seen_symbolic_windows.extend_from_slice(&r_seen_symbolic_windows[..]);
+                    all_seen_symbolic_windows.push(cross_sym_t.clone());
                     let cross_rate_sym = SymRate {
                         events: cross_sym_n,
                         window: cross_sym_t,
-                        max_window: max(l_max_window, r_max_window),
-                        min_window: min(l_min_window, r_min_window),
-                        seen_concrete_windows: l_seen_concrete_windows,
+                        max_window: max(*l_max_window, *r_max_window),
+                        min_window: min(*l_min_window, *r_min_window),
+                        seen_concrete_windows: all_seen_concrete_windows,
                         // Add the symbolic window generated by the crossover
                         // region to the set of seen symbolic windows for use
                         // in the overall subtyping constraint as a possible
@@ -308,11 +323,11 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> Vec<SymRate> {
                         // tracking concrete window sizes, but I'll probably
                         // need to prove this. I do suspect right now that it
                         // is necessary, so I'm including it here.
-                        seen_symbolic_windows: l_seen_symbolic_windows,
+                        seen_symbolic_windows: all_seen_symbolic_windows,
                     };
-                    return_sym.push(lsym);
+                    return_sym.push(lsym.clone());
                     return_sym.push(cross_rate_sym);
-                    return_sym.push(rsym);
+                    return_sym.push(rsym.clone());
                 }
             }
             return return_sym;
@@ -327,7 +342,7 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, mut s: &Solver) -> Vec<SymRate> {
     }
 }
 
-fn rate_sub_symbolize(rate1: &BARate, rate2: &BARate, mut s: &Solver) {
+fn rate_sub_symbolize(rate1: &BARate, rate2: &BARate, s: &Solver) {
     // TODO: We probably just want to call rate_symbolize here on each side
     // and then do the stuff that involves the actual subtyping comparison
     // between both sides, i.e. coalescing all the seen windows, min and max
@@ -336,8 +351,8 @@ fn rate_sub_symbolize(rate1: &BARate, rate2: &BARate, mut s: &Solver) {
     let left_rate_sym = rate_symbolize(rate1, &SubRel::LHS, s);
     let right_rate_sym = rate_symbolize(rate2, &SubRel::RHS, s);
     // Coalesce and add final constraints
-    for lsym in left_rate_sym.into_iter() {
-        for rsym in right_rate_sym.into_iter() {
+    for lsym in left_rate_sym.iter() {
+        for rsym in right_rate_sym.iter() {
             let SymRate {
                 events: l_sym_n,
                 window: l_sym_t,
@@ -354,16 +369,23 @@ fn rate_sub_symbolize(rate1: &BARate, rate2: &BARate, mut s: &Solver) {
                 seen_concrete_windows: r_seen_concrete_windows,
                 seen_symbolic_windows: r_seen_symbolic_windows,
             } = rsym;
-            s.assert(&l_sym_t.eq(&r_sym_t));
-            let overall_max_window = max(l_max_window, r_min_window);
-            let overall_min_window = min(l_min_window, r_min_window);
+            s.assert(&l_sym_t.eq(r_sym_t));
+            let overall_max_window = max(*l_max_window, *r_max_window);
+            let overall_min_window = min(*l_min_window, *r_min_window);
             s.assert(&l_sym_t.le(Int::from_u64(overall_max_window as u64)));
             s.assert(&l_sym_t.ge(Int::from_u64(overall_min_window as u64)));
-            s.assert(&l_sym_n.le(&r_sym_n));
+            s.assert(&l_sym_n.le(r_sym_n));
             // TODO: Add constraints for possible window sizes --- must be one
             // of seen concrete windows or seen symbolic windows.
-            l_seen_concrete_windows.append(&mut r_seen_concrete_windows);
-            l_seen_symbolic_windows.append(&mut r_seen_symbolic_windows);
+            // TODO: This is copy-pasted from above; there definitely
+            // is opportunity here to better abstract and modularize
+            // the code.
+            let mut all_seen_concrete_windows = Vec::new();
+            all_seen_concrete_windows.extend_from_slice(&l_seen_concrete_windows[..]);
+            all_seen_concrete_windows.extend_from_slice(&r_seen_concrete_windows[..]);
+            let mut all_seen_symbolic_windows = Vec::new();
+            all_seen_symbolic_windows.extend_from_slice(&l_seen_symbolic_windows[..]);
+            all_seen_symbolic_windows.extend_from_slice(&r_seen_symbolic_windows[..]);
             // NOTE: How do we do polymorphism in Rust?
             // We could probably construct a variant type for generic windows,
             // i.e. concrete or symbolic, and then do stuff on that type.
@@ -373,11 +395,13 @@ fn rate_sub_symbolize(rate1: &BARate, rate2: &BARate, mut s: &Solver) {
             let symbolic_window_eq = |sw: Int| -> Bool {
                 l_sym_t.eq(sw)
             };
-            let mut all_window_constraints = Vec::new();
-            l_seen_concrete_windows.into_iter().map(concrete_window_eq).collect();
-            l_seen_symbolic_windows.into_iter().map(symbolic_window_eq).collect();
-            all_window_constraints.append(&mut l_seen_concrete_windows);
-            all_window_constraints.append(&mut l_seen_symbolic_windows);
+            let mut all_window_constraints: Vec<Bool> = Vec::new();
+            let mut concrete_window_constraints = all_seen_concrete_windows
+                .into_iter().map(concrete_window_eq).collect();
+            let mut symbolic_window_constraints = all_seen_symbolic_windows
+                .into_iter().map(symbolic_window_eq).collect();
+            all_window_constraints.append(&mut concrete_window_constraints);
+            all_window_constraints.append(&mut symbolic_window_constraints);
             s.assert(Bool::or(&all_window_constraints[..]));
         }
     }
@@ -385,7 +409,7 @@ fn rate_sub_symbolize(rate1: &BARate, rate2: &BARate, mut s: &Solver) {
 
 // Construct SMT constraints and solve.
 fn rate_sub_solve(rate1: &BARate, rate2: &BARate) -> bool {
-    let mut solver = Solver::new();
+    let solver = Solver::new();
     rate_sub_symbolize(rate1, rate2, &solver);
     match solver.check() {
         // TODO: It would be nice to produce a model in this case.
