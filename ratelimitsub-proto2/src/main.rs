@@ -29,7 +29,7 @@ enum BARate {
     Sym(SymRate),
     Raw(Rate),
     Par(Box<BARate>, Box<BARate>),
-    // NOTE: We should always immediately collapse Concats on the LHS of a
+    // NOTE: We should always immediately collapse Concats on the Lhs of a
     // potential subtyping relation when both elements are Raw. This case is
     // really only for the scenario where one (or both!) sides of the Concat
     // are ParSum (since our current set of rules can't immediately reduce this
@@ -49,8 +49,8 @@ enum StreamRate {
 
 #[derive(Clone, Debug)]
 enum SubRel {
-    LHS,
-    RHS,
+    Lhs,
+    Rhs,
 }
 
 // NOTE: This function has side effects: it mutates a Solver.
@@ -94,14 +94,14 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, s: &Solver) -> Vec<SymRate> {
                 // rules and automatically compile them to these SMT assertions.
                 // I'm pretty worried that my hand-compilation here is going to
                 // be subtly wrong.
-                SubRel::LHS => {
+                SubRel::Lhs => {
                     s.assert((sym_raw_t.le(&t)).implies(sym_raw_n.eq(&n)));
                     s.assert((sym_raw_t.ge(&t)).implies(((&sym_raw_t % &t).eq(0)).ite(
                         &sym_raw_n.eq(&n * (&sym_raw_t / &t)),
                         &sym_raw_n.eq(&n * (&sym_raw_t / &t) + 1),
                     )));
                 }
-                SubRel::RHS => {
+                SubRel::Rhs => {
                     s.assert((sym_raw_t.ge(&t)).implies(sym_raw_n.eq(&n)));
                     s.assert((sym_raw_t.le(&t)).implies(((&t % &sym_raw_t).eq(0)).ite(
                         &(((&n % (&t / &sym_raw_t)).eq(0)).ite(
@@ -115,14 +115,14 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, s: &Solver) -> Vec<SymRate> {
                     )))
                 }
             };
-            return vec![SymRate {
+            vec![SymRate {
                 events: sym_raw_n,
                 window: sym_raw_t,
                 max_window: *usize_t,
                 min_window: *usize_t,
                 seen_concrete_windows: vec![*usize_t],
                 seen_symbolic_windows: Vec::new(),
-            }];
+            }]
         }
         BARate::Par(left, right) => {
             let left_sym = rate_symbolize(left, rel, s);
@@ -161,15 +161,15 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, s: &Solver) -> Vec<SymRate> {
                     // right hand side specific) rules for conversion to a common
                     // window size.
                     match rel {
-                        SubRel::LHS => {
+                        SubRel::Lhs => {
                             // l_sym_t < r_sym_t
                             s.assert((l_sym_t.lt(r_sym_t)).implies(Bool::and(&[
                                 ((sym_par_t.eq(l_sym_t)).implies(
-                                    // Convert RHS symbolic rate to supertype with
+                                    // Convert Rhs symbolic rate to supertype with
                                     // window size l_sym_t
                                     sym_par_n.eq(l_sym_n + r_sym_n),
                                 )),
-                                // Convert LHS symbolic rate to supertype with
+                                // Convert Lhs symbolic rate to supertype with
                                 // window size r_sym_t
                                 ((sym_par_t.eq(r_sym_t)).implies(sym_par_n.eq(r_sym_n
                                     + ((r_sym_t % l_sym_t).eq(0)).ite(
@@ -184,26 +184,26 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, s: &Solver) -> Vec<SymRate> {
                             // symbolize_window_change(smaller_w: ..., larger_w:...)
                             // Specifically the window change reasoning with all the
                             // annoying-to-type ceiling and floor cases.
-                            s.assert((&l_sym_t.gt(r_sym_t)).implies(Bool::and(&[
+                            s.assert((l_sym_t.gt(r_sym_t)).implies(Bool::and(&[
                                 (sym_par_t.eq(l_sym_t)).implies(
-                                    // Convert RHS symbolic rate to supertype with
+                                    // Convert Rhs symbolic rate to supertype with
                                     // window size l_sym_t
                                     sym_par_n.eq(l_sym_n
-                                        + (&(l_sym_t % r_sym_t).eq(0)).ite(
+                                        + ((l_sym_t % r_sym_t).eq(0)).ite(
                                             &(r_sym_n * (l_sym_t / r_sym_t)),
                                             &(r_sym_n * ((l_sym_t / r_sym_t) + 1)),
                                         )),
                                 ),
-                                // Convert LHS symbolic rate to supertype with
+                                // Convert Lhs symbolic rate to supertype with
                                 // window size r_sym_t
                                 (sym_par_t.eq(r_sym_t)).implies(sym_par_n.eq(l_sym_n + r_sym_n)),
                             ])));
                         }
-                        SubRel::RHS => {
+                        SubRel::Rhs => {
                             // l_sym_t < r_sym_t
-                            s.assert((&l_sym_t.lt(r_sym_t)).implies(Bool::and(&[
+                            s.assert((l_sym_t.lt(r_sym_t)).implies(Bool::and(&[
                                 ((sym_par_t.eq(l_sym_t)).implies(
-                                    // Convert RHS symbolic rate to subtype with
+                                    // Convert Rhs symbolic rate to subtype with
                                     // window size l_sym_t
                                     sym_par_n.eq(l_sym_n
                                         + ((r_sym_t % l_sym_t).eq(0)).ite(
@@ -217,19 +217,19 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, s: &Solver) -> Vec<SymRate> {
                                             )),
                                         )),
                                 )),
-                                // Convert LHS symbolic rate to subtype with
+                                // Convert Lhs symbolic rate to subtype with
                                 // window size r_sym_t
                                 (sym_par_t.eq(r_sym_t)).implies(sym_par_n.eq(l_sym_n + r_sym_n)),
                             ])));
                             // l_sym_t > r_sym_t
-                            s.assert((&l_sym_t.gt(r_sym_t)).implies(Bool::and(&[
+                            s.assert((l_sym_t.gt(r_sym_t)).implies(Bool::and(&[
                                 (sym_par_t.eq(l_sym_t)).implies(
-                                    // Convert RHS symbolic rate to subtype with
+                                    // Convert Rhs symbolic rate to subtype with
                                     // window size l_sym_t
                                     sym_par_n.eq(l_sym_n + r_sym_n),
                                 ),
                                 (sym_par_t.eq(r_sym_t)).implies(
-                                    // Convert LHS symbolic rate to subtype with
+                                    // Convert Lhs symbolic rate to subtype with
                                     // window size r_sym_t
                                     sym_par_n.eq(r_sym_n
                                         + ((l_sym_t % r_sym_t).eq(0)).ite(
@@ -265,10 +265,10 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, s: &Solver) -> Vec<SymRate> {
                     return_sym.push(par_rate_sym);
                 }
             }
-            return return_sym;
+            return_sym
         }
         BARate::LConcat(left, right) => {
-            // NOTE: rel here should only be SubRel::LHS. Again, it would be
+            // NOTE: rel here should only be SubRel::Lhs. Again, it would be
             // nice to prove this in the code itself, but I'll just write this
             // note here now to call this out.
             let left_sym = rate_symbolize(left, rel, s);
@@ -298,8 +298,8 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, s: &Solver) -> Vec<SymRate> {
                     let cross_sym_n = Int::fresh_const("n");
                     let cross_sym_t = Int::fresh_const("t");
                     // Add constraints for crossover period
-                    s.assert(&cross_sym_n.eq(l_sym_n + r_sym_n));
-                    s.assert(&cross_sym_t.eq(l_sym_t + r_sym_t));
+                    s.assert(cross_sym_n.eq(l_sym_n + r_sym_n));
+                    s.assert(cross_sym_t.eq(l_sym_t + r_sym_t));
                     // More imperative stuff that I don't like, but I don't know
                     // how to use RCs yet so it's OK.
                     // TODO: This is copy-pasted from above; there definitely
@@ -333,7 +333,7 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, s: &Solver) -> Vec<SymRate> {
                     return_sym.push(rsym.clone());
                 }
             }
-            return return_sym;
+            return_sym
         }
         _ => {
             // This is where I wish we could prove this statement in the code
@@ -351,8 +351,8 @@ fn rate_sub_symbolize(rate1: &BARate, rate2: &BARate, s: &Solver) {
     // between both sides, i.e. coalescing all the seen windows, min and max
     // windows, and then adding the global constraints involving everything
     // in the subtyping relation to the solver.
-    let left_rate_sym = rate_symbolize(rate1, &SubRel::LHS, s);
-    let right_rate_sym = rate_symbolize(rate2, &SubRel::RHS, s);
+    let left_rate_sym = rate_symbolize(rate1, &SubRel::Lhs, s);
+    let right_rate_sym = rate_symbolize(rate2, &SubRel::Rhs, s);
     // Coalesce and add final constraints
     for lsym in left_rate_sym.iter() {
         for rsym in right_rate_sym.iter() {
@@ -372,12 +372,12 @@ fn rate_sub_symbolize(rate1: &BARate, rate2: &BARate, s: &Solver) {
                 seen_concrete_windows: r_seen_concrete_windows,
                 seen_symbolic_windows: r_seen_symbolic_windows,
             } = rsym;
-            s.assert(&l_sym_t.eq(r_sym_t));
+            s.assert(l_sym_t.eq(r_sym_t));
             let overall_max_window = max(*l_max_window, *r_max_window);
             let overall_min_window = min(*l_min_window, *r_min_window);
-            s.assert(&l_sym_t.le(Int::from_u64(overall_max_window as u64)));
-            s.assert(&l_sym_t.ge(Int::from_u64(overall_min_window as u64)));
-            s.assert(&l_sym_n.le(r_sym_n));
+            s.assert(l_sym_t.le(Int::from_u64(overall_max_window as u64)));
+            s.assert(l_sym_t.ge(Int::from_u64(overall_min_window as u64)));
+            s.assert(l_sym_n.le(r_sym_n));
             // TODO: Add constraints for possible window sizes --- must be one
             // of seen concrete windows or seen symbolic windows.
             // TODO: This is copy-pasted from above; there definitely
@@ -458,11 +458,11 @@ fn convert_to_ba(sr: &StreamRate, rel: &SubRel) -> BARate {
     match sr {
         StreamRate::Raw(r) => BARate::Raw(r.clone()),
         StreamRate::Sum(box_sr1, box_sr2) => match rel {
-            SubRel::LHS => BARate::Or(
+            SubRel::Lhs => BARate::Or(
                 Box::new(convert_to_ba(box_sr1, rel)),
                 Box::new(convert_to_ba(box_sr2, rel)),
             ),
-            SubRel::RHS => BARate::And(
+            SubRel::Rhs => BARate::And(
                 Box::new(convert_to_ba(box_sr1, rel)),
                 Box::new(convert_to_ba(box_sr2, rel)),
             ),
@@ -472,11 +472,11 @@ fn convert_to_ba(sr: &StreamRate, rel: &SubRel) -> BARate {
             Box::new(convert_to_ba(box_sr2, rel)),
         ),
         StreamRate::Concat(box_sr1, box_sr2) => match rel {
-            SubRel::LHS => BARate::LConcat(
+            SubRel::Lhs => BARate::LConcat(
                 Box::new(convert_to_ba(box_sr1, rel)),
                 Box::new(convert_to_ba(box_sr2, rel)),
             ),
-            SubRel::RHS => BARate::And(
+            SubRel::Rhs => BARate::And(
                 Box::new(convert_to_ba(box_sr1, rel)),
                 Box::new(convert_to_ba(box_sr2, rel)),
             ),
@@ -606,8 +606,8 @@ fn reduce_ba_fixpoint(bar: BARate) -> BARate {
 // }
 
 fn stream_sub(sr1: &StreamRate, sr2: &StreamRate) -> bool {
-    let norm_ba_lhs = reduce_ba_fixpoint(convert_to_ba(sr1, &SubRel::LHS));
-    let norm_ba_rhs = reduce_ba_fixpoint(convert_to_ba(sr2, &SubRel::RHS));
+    let norm_ba_lhs = reduce_ba_fixpoint(convert_to_ba(sr1, &SubRel::Lhs));
+    let norm_ba_rhs = reduce_ba_fixpoint(convert_to_ba(sr2, &SubRel::Rhs));
     ba_rate_sub(&norm_ba_lhs, &norm_ba_rhs)
 }
 
