@@ -914,5 +914,93 @@ mod tests {
             stream_sub(&sub2_left, &sub2_right),
             true
         );
+        let sub3_left = StreamRate::Par(
+            Box::new(StreamRate::Raw(
+                Rate {
+                    events: 5,
+                    window: 10,
+                }
+            )),
+            Box::new(StreamRate::Raw(
+                Rate {
+                    events: 7,
+                    window: 5,
+                }
+            ))
+        );
+        let sub3_right = StreamRate::Par(
+            Box::new(StreamRate::Raw(
+                Rate {
+                    events: 38000500,
+                    window: 100000,
+                }
+            )),
+            Box::new(StreamRate::Raw(
+                Rate {
+                    events: 250940989,
+                    window: 85823490,
+                }
+            ))
+        );
+        assert_eq!(
+            stream_sub(&sub3_left, &sub3_right),
+            true
+        );
+        let sub4_left = StreamRate::Concat(
+            Box::new(StreamRate::Par(
+                Box::new(StreamRate::Raw(
+                    Rate {
+                        events: 5,
+                        window: 10,
+                    }
+                )),
+                Box::new(StreamRate::Raw(
+                    Rate {
+                        events: 7,
+                        window: 5,
+                    }
+                ))
+            )),
+            Box::new(StreamRate::Par(
+                Box::new(StreamRate::Raw(
+                    Rate {
+                        events: 60,
+                        window: 200,
+                    }
+                )),
+                Box::new(StreamRate::Par(
+                    Box::new(StreamRate::Raw(
+                        Rate {
+                            events: 10,
+                            window: 80,
+                        }
+                    )),
+                    Box::new(StreamRate::Raw(
+                        Rate {
+                            events: 42,
+                            window: 30,
+                        }
+                    ))
+                ))
+            ))
+        );
+        let sub4_right = StreamRate::Par(
+            Box::new(StreamRate::Raw(
+                Rate {
+                    events: 600,
+                    window: 10000,
+                }
+            )),
+            Box::new(StreamRate::Raw(
+                Rate {
+                    events: 1000,
+                    window: 9000,
+                }
+            ))
+        );
+        assert_eq!(
+            stream_sub(&sub4_left, &sub4_right),
+            false
+        );
     }
 }
