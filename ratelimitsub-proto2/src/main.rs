@@ -2,6 +2,7 @@ use z3::SatResult;
 use z3::Solver;
 use z3::ast::Bool;
 use z3::ast::Int;
+use std::dbg;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Rate {
@@ -82,6 +83,8 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, s: &Solver) -> Vec<SymRate> {
         BARate::Raw(r) => {
             let sym_raw_n = Int::fresh_const("n");
             let sym_raw_t = Int::fresh_const("t");
+            s.assert(sym_raw_n.gt(0));
+            s.assert(sym_raw_t.gt(0));
             let Rate {
                 events: usize_n,
                 window: usize_t,
@@ -131,6 +134,8 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, s: &Solver) -> Vec<SymRate> {
                 for rsym in right_sym.iter() {
                     let sym_par_n = Int::fresh_const("n");
                     let sym_par_t = Int::fresh_const("t");
+                    s.assert(sym_par_n.gt(0));
+                    s.assert(sym_par_t.gt(0));
                     let SymRate {
                         events: l_sym_n,
                         window: l_sym_t,
@@ -149,102 +154,10 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, s: &Solver) -> Vec<SymRate> {
                     } = rsym;
                     // If symbolic windows on left and right hand sides are equal, then
                     // we can immediately just sum events.
-                    s.assert((l_sym_t.eq(r_sym_t)).implies(Bool::and(&[
-                        sym_par_t.eq(l_sym_t),
-                        sym_par_n.eq(l_sym_n + r_sym_n),
-                    ])));
-                    // New symbolic window for parallel must be equal to one of the
-                    // existing left or right symbolic windows.
-                    s.assert(Bool::or(&[sym_par_t.eq(l_sym_t), sym_par_t.eq(r_sym_t)]));
-                    // Otherwise, we have some sub/super-type specific (i.e. left and
-                    // right hand side specific) rules for conversion to a common
-                    // window size.
-                    match rel {
-                        SubRel::Lhs => {
-                            // l_sym_t < r_sym_t
-                            s.assert((l_sym_t.lt(r_sym_t)).implies(Bool::and(&[
-                                ((sym_par_t.eq(l_sym_t)).implies(
-                                    // Convert Rhs symbolic rate to supertype with
-                                    // window size l_sym_t
-                                    sym_par_n.eq(l_sym_n + r_sym_n),
-                                )),
-                                // Convert Lhs symbolic rate to supertype with
-                                // window size r_sym_t
-                                ((sym_par_t.eq(r_sym_t)).implies(sym_par_n.eq(r_sym_n
-                                    + ((r_sym_t % l_sym_t).eq(0)).ite(
-                                        &(l_sym_n * (r_sym_t / l_sym_t)),
-                                        &(l_sym_n * ((r_sym_t / l_sym_t) + 1)),
-                                    )))),
-                            ])));
-                            // l_sym_t > r_sym_t
-                            // TODO: There might at least be a way to factor out this
-                            // particular reasoning into a function and then just call it
-                            // each time we need it, i.e. something like:
-                            // symbolize_window_change(smaller_w: ..., larger_w:...)
-                            // Specifically the window change reasoning with all the
-                            // annoying-to-type ceiling and floor cases.
-                            s.assert((l_sym_t.gt(r_sym_t)).implies(Bool::and(&[
-                                (sym_par_t.eq(l_sym_t)).implies(
-                                    // Convert Rhs symbolic rate to supertype with
-                                    // window size l_sym_t
-                                    sym_par_n.eq(l_sym_n
-                                        + ((l_sym_t % r_sym_t).eq(0)).ite(
-                                            &(r_sym_n * (l_sym_t / r_sym_t)),
-                                            &(r_sym_n * ((l_sym_t / r_sym_t) + 1)),
-                                        )),
-                                ),
-                                // Convert Lhs symbolic rate to supertype with
-                                // window size r_sym_t
-                                (sym_par_t.eq(r_sym_t)).implies(sym_par_n.eq(l_sym_n + r_sym_n)),
-                            ])));
-                        }
-                        SubRel::Rhs => {
-                            // l_sym_t < r_sym_t
-                            s.assert((l_sym_t.lt(r_sym_t)).implies(Bool::and(&[
-                                ((sym_par_t.eq(l_sym_t)).implies(
-                                    // Convert Rhs symbolic rate to subtype with
-                                    // window size l_sym_t
-                                    sym_par_n.eq(l_sym_n
-                                        + ((r_sym_t % l_sym_t).eq(0)).ite(
-                                            &(((r_sym_n % (r_sym_t / l_sym_t)).eq(0)).ite(
-                                                &(r_sym_n / (r_sym_t / l_sym_t)),
-                                                &(r_sym_n / ((r_sym_t / l_sym_t) + 1)),
-                                            )),
-                                            &(((r_sym_n % ((r_sym_t / l_sym_t) + 1)).eq(0)).ite(
-                                                &(r_sym_n / ((r_sym_t / l_sym_t) + 1)),
-                                                &((r_sym_n / ((r_sym_t / l_sym_t) + 1)) + 1),
-                                            )),
-                                        )),
-                                )),
-                                // Convert Lhs symbolic rate to subtype with
-                                // window size r_sym_t
-                                (sym_par_t.eq(r_sym_t)).implies(sym_par_n.eq(l_sym_n + r_sym_n)),
-                            ])));
-                            // l_sym_t > r_sym_t
-                            s.assert((l_sym_t.gt(r_sym_t)).implies(Bool::and(&[
-                                (sym_par_t.eq(l_sym_t)).implies(
-                                    // Convert Rhs symbolic rate to subtype with
-                                    // window size l_sym_t
-                                    sym_par_n.eq(l_sym_n + r_sym_n),
-                                ),
-                                (sym_par_t.eq(r_sym_t)).implies(
-                                    // Convert Lhs symbolic rate to subtype with
-                                    // window size r_sym_t
-                                    sym_par_n.eq(r_sym_n
-                                        + ((l_sym_t % r_sym_t).eq(0)).ite(
-                                            &(((l_sym_n % (l_sym_t / r_sym_t)).eq(0)).ite(
-                                                &(l_sym_n / (l_sym_t / r_sym_t)),
-                                                &(l_sym_n / ((l_sym_t / r_sym_t) + 1)),
-                                            )),
-                                            &(((l_sym_n % ((l_sym_t / r_sym_t) + 1)).eq(0)).ite(
-                                                &(l_sym_n / ((l_sym_t / r_sym_t) + 1)),
-                                                &((l_sym_n / ((l_sym_t / r_sym_t) + 1)) + 1),
-                                            )),
-                                        )),
-                                ),
-                            ])));
-                        }
-                    };
+                    // NOTE: They must be equal!
+                    s.assert(l_sym_t.eq(r_sym_t));
+                    s.assert(sym_par_t.eq(r_sym_t));
+                    s.assert(sym_par_n.eq(l_sym_n + r_sym_n));
                     // More imperative stuff that I don't like, but I don't know
                     // how to use RCs yet so it's OK.
                     let mut all_seen_concrete_windows = Vec::new();
@@ -296,6 +209,8 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, s: &Solver) -> Vec<SymRate> {
                     } = rsym;
                     let cross_sym_n = Int::fresh_const("n");
                     let cross_sym_t = Int::fresh_const("t");
+                    s.assert(cross_sym_n.gt(0));
+                    s.assert(cross_sym_t.gt(0));
                     // Add constraints for crossover period
                     s.assert(cross_sym_n.eq(l_sym_n + r_sym_n));
                     s.assert(cross_sym_t.eq(l_sym_t + r_sym_t));
@@ -413,13 +328,16 @@ fn rate_sub_symbolize(rate1: &BARate, rate2: &BARate, s: &Solver) {
 fn rate_sub_solve(rate1: &BARate, rate2: &BARate) -> bool {
     let solver = Solver::new();
     rate_sub_symbolize(rate1, rate2, &solver);
+    let asserts = solver.get_assertions();
+    dbg!(asserts);
     match solver.check() {
         // TODO: It would be nice to produce a model in this case.
         SatResult::Sat => {
             // TODO: OK, actually produce the model here, since there seems to
             // be a problem with constraint generation that we need to debug.
-            let
-            println!()
+            let model = solver.get_model().unwrap();
+            println!("printing model!");
+            dbg!(model);
             true
         },
         SatResult::Unsat | SatResult::Unknown => false,
@@ -960,10 +878,41 @@ mod tests {
                 }
             ))
         );
-        // TODO: Fix this!
         assert_eq!(
             stream_sub(&sub1_left, &sub1_right),
             false
+        );
+        let sub2_left = StreamRate::Par(
+            Box::new(StreamRate::Raw(
+                Rate {
+                    events: 10,
+                    window: 3,
+                }
+            )),
+            Box::new(StreamRate::Raw(
+                Rate {
+                    events: 12,
+                    window: 5,
+                }
+            ))
+        );
+        let sub2_right = StreamRate::Par(
+            Box::new(StreamRate::Raw(
+                Rate {
+                    events: 40,
+                    window: 4,
+                }
+            )),
+            Box::new(StreamRate::Raw(
+                Rate {
+                    events: 10,
+                    window: 5,
+                }
+            ))
+        );
+        assert_eq!(
+            stream_sub(&sub2_left, &sub2_right),
+            true
         );
     }
 }

@@ -69,7 +69,7 @@ def check1():
     cl8 = z3.Implies(b1 > b2, a1 <= a2)
     solve(z3.And(cl0,cl1,cl2,cl3,cl4,cl5,cl6,cl7,cl8,cl9,cl10,cl11,cl12,cl13,cl14,cl15,cl16,cl17))
 
-# check1()
+check1()
 
 # Check if (5/10 || 7/5) . (60/200 || 10/80 || 42/30) <: (600/10000 || 1000/9000).
 def check2():
