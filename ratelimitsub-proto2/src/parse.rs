@@ -7,6 +7,7 @@ use crate::streamrate::Rate;
 // I should learn how to write a real parser at some point, hopefully soon.
 // This is very hacky, but it's OK for now.
 
+#[derive(Debug)]
 enum ExprOp {
     Zero,
     Sum,
@@ -20,6 +21,15 @@ fn get_next_parenthesized_chunk<'a>(
     start_idx: usize
 ) -> &'a str {
     let error_prefix = "parsing error:";
+    match s.get(start_idx..start_idx+1) {
+        // TODO: OK, well to start: the start index is not actually a (, despite
+        // us directly making sure that this is the case at the call site...
+        None => panic!("wtf!"),
+        Some(c) => match c {
+            "(" => (),
+            _ => panic!("first character of parenthesized chunk should be (")
+        }
+    }
     // We only call this function when we've discovered an open parenthesis.
     let mut open_parens = 1;
     loop {
@@ -29,9 +39,8 @@ fn get_next_parenthesized_chunk<'a>(
                     (i, ')') => {
                         open_parens -= 1;
                         if open_parens == 0 {
-                            // We don't want i+1 as the last index, since we
-                            // want to remove the trailing ) anyway.
-                            break &s[start_idx..i]
+                            // We want the i+1, since we want the trailing ).
+                            break &s[start_idx..i+2]
                         } else {
                             continue
                         }
@@ -75,7 +84,7 @@ fn chunk_one_level(s: &str) -> (ExprOp, Vec<&str>) {
             Some(c_tuple) => {
                 match c_tuple {
                     (_, ' ') | (_, '\t') => continue,
-                    (_, '.') => break ExprOp::Concat,
+                    (i, '.') => break ExprOp::Concat,
                     (_, '|') => {
                         match s_trim_iter.next() {
                             Some(c_tuple) => {
@@ -114,26 +123,26 @@ fn chunk_one_level(s: &str) -> (ExprOp, Vec<&str>) {
                             active_start = i
                         }
                     },
-                    (_, ' ') | (_, '\t') => {
+                    (i, ' ') | (i, '\t') => {
                         if active_range {
                             active_range = false;
-                            chunked.push(&s[active_start..(active_end + 1)])
+                            chunked.push(&s_trim[active_start..(active_end + 1)])
                         }
                     },
                     (i, '(') => {
                         if active_range {
                             active_range = false;
-                            chunked.push(&s[active_start..(active_end + 1)])
+                            chunked.push(&s_trim[active_start..(active_end + 1)])
                         };
                         let pchunk = get_next_parenthesized_chunk(
-                            s, &mut s_trim_iter,  i);
+                            s, &mut s_trim_iter, i);
                         chunked.push(pchunk)
                     },
                     (_, ')') => {
                         outer_open_parens -= 1;
                         if active_range {
                             active_range = false;
-                            chunked.push(&s[active_start..(active_end + 1)])
+                            chunked.push(&s_trim[active_start..(active_end + 1)])
                         };
                         if outer_open_parens == 0 {
                             // Just stop parsing when our initial open parenthesis
@@ -189,10 +198,10 @@ fn generate_streamrate_rec(eo: &ExprOp, v: Vec<&str>) -> Option<StreamRate> {
         0 => None,
         1 => {
             // This unwrap is guaranteed to be safe.
-            Some(parse_chunk(v.get(0).unwrap()))
+            Some(parse_chunk(v.get(0).unwrap().trim()))
         },
         _ => {
-            let hd_parsed = parse_chunk(v.get(0).unwrap());
+            let hd_parsed = parse_chunk(v.get(0).unwrap().trim());
             // This unwrap should also be guaranteed to be safe, although it's a
             // bit harder to reason about and prove. Basically, the case analysis
             // here makes it so.
@@ -236,14 +245,14 @@ pub fn parse(full_sub_str: &String) -> (StreamRate, StreamRate) {
     let mut split_sides = full_sub_str.split("<:");
     let left = match split_sides.next() {
         None => panic!("wtf!"),
-        Some(r) => parse_side(&r),
+        Some(r) => parse_side(&r.trim()),
     };
     let right = match split_sides.next() {
         None => panic!("wtf!"),
-        Some(r) => parse_side(&r),
+        Some(r) => parse_side(&r.trim()),
     };
     // TODO: Remove or comment out after testing.
-    dbg!(left.clone());
-    dbg!(right.clone());
+    // dbg!(left.clone());
+    // dbg!(right.clone());
     (left, right)
 }
