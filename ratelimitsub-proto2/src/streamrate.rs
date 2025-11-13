@@ -14,7 +14,11 @@ pub struct Rate {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum BARate {
-    Sym(SymRate),
+    // NOTE: I guess I never use this at the moment. I thought we might have
+    // needed to pass symbolic rates back up recursively somehow as a BARate,
+    // but I guess I just store all the symbolic rates in a Vec that actually
+    // gets passed back up.
+    // Sym(SymRate),
     Raw(Rate),
     Par(Box<BARate>, Box<BARate>),
     // NOTE: We should always immediately collapse Concats on the Lhs of a
@@ -67,7 +71,7 @@ fn min(a: usize, b: usize) -> usize {
 
 fn rate_symbolize(rate: &BARate, rel: &SubRel, s: &Solver) -> Vec<SymRate> {
     match rate {
-        BARate::Sym(s) => vec![s.clone()],
+        // BARate::Sym(s) => vec![s.clone()],
         BARate::Raw(r) => {
             let sym_raw_n = Int::fresh_const("n");
             let sym_raw_t = Int::fresh_const("t");
@@ -142,7 +146,7 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, s: &Solver) -> Vec<SymRate> {
                     } = rsym;
                     // If symbolic windows on left and right hand sides are equal, then
                     // we can immediately just sum events.
-                    // NOTE: They must be equal!
+                    // NOTE: They must be equal! This simplifies this below.
                     s.assert(l_sym_t.eq(r_sym_t));
                     s.assert(sym_par_t.eq(r_sym_t));
                     s.assert(sym_par_n.eq(l_sym_n + r_sym_n));
@@ -400,7 +404,7 @@ fn convert_to_ba(sr: &StreamRate, rel: &SubRel) -> BARate {
 // stop when the BARate rewrites stop changing.
 fn reduce_ba(bar: BARate) -> (BARate, bool) {
     match bar {
-        BARate::Sym(_) => (bar, false),
+        // BARate::Sym(_) => (bar, false),
         BARate::Raw(_) => (bar, false),
         BARate::Par(bar1, bar2) => {
             match (*bar1, *bar2) {

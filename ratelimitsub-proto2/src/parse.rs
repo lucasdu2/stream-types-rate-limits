@@ -242,5 +242,8 @@ pub fn parse(full_sub_str: &String) -> (StreamRate, StreamRate) {
         None => panic!("wtf!"),
         Some(r) => parse_side(&r),
     };
+    // TODO: Remove or comment out after testing.
+    dbg!(left.clone());
+    dbg!(right.clone());
     (left, right)
 }
