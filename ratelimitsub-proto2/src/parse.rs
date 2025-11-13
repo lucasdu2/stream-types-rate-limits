@@ -84,7 +84,7 @@ fn chunk_one_level(s: &str) -> (ExprOp, Vec<&str>) {
             Some(c_tuple) => {
                 match c_tuple {
                     (_, ' ') | (_, '\t') => continue,
-                    (i, '.') => break ExprOp::Concat,
+                    (_, '.') => break ExprOp::Concat,
                     (_, '|') => {
                         match s_trim_iter.next() {
                             Some(c_tuple) => {
@@ -123,7 +123,7 @@ fn chunk_one_level(s: &str) -> (ExprOp, Vec<&str>) {
                             active_start = i
                         }
                     },
-                    (i, ' ') | (i, '\t') => {
+                    (_, ' ') | (_, '\t') => {
                         if active_range {
                             active_range = false;
                             chunked.push(&s_trim[active_start..(active_end + 1)])
