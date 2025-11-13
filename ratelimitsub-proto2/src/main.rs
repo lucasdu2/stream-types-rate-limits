@@ -8,8 +8,8 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     let (left, right) = parse::parse(&args[1]);
     if streamrate::stream_sub(&left, &right) {
-        println!("{} is true", args[0])
+        println!("{} is true", args[1])
     } else {
-         println!("{} is false", args[0])
+         println!("{} is false", args[1])
     }
 }

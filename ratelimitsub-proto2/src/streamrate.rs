@@ -2,7 +2,7 @@ use z3::SatResult;
 use z3::Solver;
 use z3::ast::Bool;
 use z3::ast::Int;
-use std::dbg;
+// use std::dbg;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Rate {
@@ -321,7 +321,7 @@ fn rate_sub_solve(rate1: &BARate, rate2: &BARate) -> bool {
     let solver = Solver::new();
     rate_sub_symbolize(rate1, rate2, &solver);
     let asserts = solver.get_assertions();
-    dbg!(asserts);
+    // dbg!(asserts);
     match solver.check() {
         // TODO: It would be nice to produce a model in this case.
         SatResult::Sat => {
@@ -329,7 +329,7 @@ fn rate_sub_solve(rate1: &BARate, rate2: &BARate) -> bool {
             // be a problem with constraint generation that we need to debug.
             let model = solver.get_model().unwrap();
             println!("printing model!");
-            dbg!(model);
+            // dbg!(model);
             true
         },
         SatResult::Unsat | SatResult::Unknown => false,
