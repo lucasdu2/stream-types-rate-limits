@@ -14,11 +14,6 @@ enum ExprOp {
     Concat,
 }
 
-// TODO
-fn parse_chunk(chunk: &str) -> StreamRate {
-
-}
-
 fn get_next_parenthesized_chunk<'a>(
     s: &'a str,
     s_iter: &mut str::CharIndices,
@@ -130,7 +125,8 @@ fn chunk_one_level(s: &str) -> (ExprOp, Vec<&str>) {
                             active_range = false;
                             chunked.push(&s[active_start..(active_end + 1)])
                         };
-                        let pchunk = get_next_parenthesized_chunk(s, &mut s_trim_iter,  i);
+                        let pchunk = get_next_parenthesized_chunk(
+                            s, &mut s_trim_iter,  i);
                         chunked.push(pchunk)
                     },
                     (_, ')') => {
@@ -163,44 +159,86 @@ fn chunk_one_level(s: &str) -> (ExprOp, Vec<&str>) {
     return (op, chunked)
 }
 
-fn generate_streamrate_rec(eo: ExprOp, v: Vec<&str>) -> Option<StreamRate> {
-    if v.len() == 0 {
-        None
-    } else {
-        match eo {
-            ExprOp::Sum => {
-                let hd = v.get(0);
-                let tl = v.get(1..);
-                // TODO
-                Some(StreamRate::Sum(v.get(0)))
+fn parse_chunk(chunk: &str) -> StreamRate {
+    match chunk.get(0..1) {
+        Some("(") => parse_side(chunk),
+        Some(_) => {
+            let mut rate_parts = chunk.split('/');
+            let ev_count: usize = match rate_parts.next() {
+                None => panic!("raw rate must have form n/t"),
+                Some(e) => match e.parse::<usize>() {
+                    Err(err) => panic!("raw rate event count is ill formed: {}", err),
+                    Ok(r) => r,
+                }
+            };
+            let win_size: usize = match rate_parts.next() {
+                None => panic!("raw rate must have form n/t"),
+                Some(e) => match e.parse::<usize>() {
+                    Err(err) => panic!("raw rate window size is  ill formed: {}", err),
+                    Ok(r) => r,
+                }
+            };
+            StreamRate::Raw(Rate {events: ev_count, window: win_size})
+        },
+        None => panic!("passed empty chunk to parse_chunk")
+    }
+}
+
+fn generate_streamrate_rec(eo: &ExprOp, v: Vec<&str>) -> Option<StreamRate> {
+    match v.len() {
+        0 => None,
+        1 => {
+            // This unwrap is guaranteed to be safe.
+            Some(parse_chunk(v.get(0).unwrap()))
+        },
+        _ => {
+            let hd_parsed = parse_chunk(v.get(0).unwrap());
+            // This unwrap should also be guaranteed to be safe, although it's a
+            // bit harder to reason about and prove. Basically, the case analysis
+            // here makes it so.
+            let tl_parsed = generate_streamrate_rec(
+                eo, v.get(1..).unwrap().to_vec()).unwrap();
+            match eo {
+                ExprOp::Zero => None,
+                ExprOp::Sum => {
+                    Some(StreamRate::Sum(Box::new(hd_parsed), Box::new(tl_parsed)))
+                },
+                ExprOp::Concat => {
+                    Some(StreamRate::Concat(Box::new(hd_parsed), Box::new(tl_parsed)))
+                },
+                ExprOp::Par => {
+                    Some(StreamRate::Par(Box::new(hd_parsed), Box::new(tl_parsed)))
+                },
             }
         }
     }
 }
-fn generate_streamrate(eo: ExprOp, v: Vec<&str>) -> StreamRate {
+fn generate_streamrate(eo: &ExprOp, v: Vec<&str>) -> StreamRate {
     let error_prefix = "parsing error:";
     if v.len() == 0 {
         panic!("{} no subexpressions after operator", error_prefix)
     };
-    generate_streamrate_rec(eo, v)
+    match generate_streamrate_rec(&eo, v) {
+        None => panic!("{} no subexpressions after operator", error_prefix),
+        Some(sr) => sr,
+    }
 }
 
 fn parse_side(s: &str) -> StreamRate {
     let error_prefix = "parsing error:";
     match chunk_one_level(s) {
         (ExprOp::Zero, _) => panic!("{} stream rate expression is empty", error_prefix),
-        (ExprOp::Par, v) => {
-
-        },
-        (ExprOp::Sum, v) => (),
-        (ExprOp::Concat, v) => (),
+        (eo, v) => generate_streamrate(&eo, v),
     }
 }
 
 pub fn parse(full_sub_str: &String) -> (StreamRate, StreamRate) {
     let mut split_sides = full_sub_str.split("<:");
     let left = match split_sides.next() {
-         None => panic!("wtf!"), Some(r) => parse_side(&r),}; let right = match split_sides.next() {
+        None => panic!("wtf!"),
+        Some(r) => parse_side(&r),
+    };
+    let right = match split_sides.next() {
         None => panic!("wtf!"),
         Some(r) => parse_side(&r),
     };
