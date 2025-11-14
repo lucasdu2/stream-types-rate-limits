@@ -320,15 +320,15 @@ fn rate_sub_symbolize(rate1: &BARate, rate2: &BARate, s: &Solver) {
 fn rate_sub_solve(rate1: &BARate, rate2: &BARate) -> bool {
     let solver = Solver::new();
     rate_sub_symbolize(rate1, rate2, &solver);
-    let asserts = solver.get_assertions();
+    // let asserts = solver.get_assertions();
     // dbg!(asserts);
     match solver.check() {
         // TODO: It would be nice to produce a model in this case.
         SatResult::Sat => {
             // TODO: OK, actually produce the model here, since there seems to
             // be a problem with constraint generation that we need to debug.
-            let model = solver.get_model().unwrap();
-            println!("printing model!");
+            // let model = solver.get_model().unwrap();
+            // println!("printing model!");
             // dbg!(model);
             true
         },
