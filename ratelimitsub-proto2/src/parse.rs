@@ -9,7 +9,7 @@ use crate::streamrate::Rate;
 
 #[derive(Debug)]
 enum ExprOp {
-    Zero,
+    None,
     Sum,
     Par,
     Concat,
@@ -63,20 +63,55 @@ fn get_next_parenthesized_chunk<'a>(
 }
 
 fn chunk_one_level(s: &str) -> (ExprOp, Vec<&str>) {
+    // TODO: Handle case where it's just 1 raw rate with no operators.
     let error_prefix = "parsing error:";
     let mut chunked: Vec<&str> = Vec::new();
     let s_trim = s.trim();
     let mut s_trim_iter = s_trim.char_indices();
     let mut outer_open_parens = 0;
-    match s_trim_iter.next() {
-        Some(c_tuple) => {
-            let (_, c) = c_tuple;
-            match c {
-                '(' => outer_open_parens += 1,
-                _ => panic!("{} expression must begin with (", error_prefix)
+    let mut active_range = false;
+    let mut active_start = 0;
+    let mut active_end = 0;
+    loop {
+        match s_trim_iter.next() {
+            // NOTE: This sort of ends up being the same code that gets raw
+            // rate type strings later in this function, but formatted
+            // slightly differently, i.e. we directly pattern match on the
+            // tuple later on, whereas here we pattern match on the char part
+            // exclusively. I guess I could unify this later with some nicer
+            // abstractions, but...it's fine for now.
+            Some(c_tuple) => {
+                let (i, c) = c_tuple;
+                match c {
+                    '(' => {
+                        outer_open_parens += 1;
+                        break
+                    },
+                    // Must be a single raw rate, otherwise panic.
+                    '0'..='9' | '/' => {
+                        if active_range {
+                            active_end = i
+                        } else {
+                            active_range = true;
+                            active_start = i
+                        }
+                    },
+                    _ => {
+                        panic!("{} expression must either begin with ( or be a \
+                                single raw rate",
+                               error_prefix)
+                    }
+                }
+            },
+            None => {
+                if active_range {
+                    chunked.push(s);
+                    return (ExprOp::None, chunked)
+                } else {
+                    return (ExprOp::None, chunked) // Just return empty Vec
+                }
             }
         }
-        None => return (ExprOp::Zero, chunked) // Just return empty Vec
     };
     // Find operator...
     let op: ExprOp = loop {
@@ -108,9 +143,7 @@ fn chunk_one_level(s: &str) -> (ExprOp, Vec<&str>) {
             }
         }
     };
-    let mut active_range = false;
-    let mut active_start = 0;
-    let mut active_end = 0;
+
     loop {
         match s_trim_iter.next() {
             Some(c_tuple) => {
@@ -208,7 +241,7 @@ fn generate_streamrate_rec(eo: &ExprOp, v: Vec<&str>) -> Option<StreamRate> {
             let tl_parsed = generate_streamrate_rec(
                 eo, v.get(1..).unwrap().to_vec()).unwrap();
             match eo {
-                ExprOp::Zero => None,
+                ExprOp::None => None,
                 ExprOp::Sum => {
                     Some(StreamRate::Sum(Box::new(hd_parsed), Box::new(tl_parsed)))
                 },
@@ -236,7 +269,15 @@ fn generate_streamrate(eo: &ExprOp, v: Vec<&str>) -> StreamRate {
 fn parse_side(s: &str) -> StreamRate {
     let error_prefix = "parsing error:";
     match chunk_one_level(s) {
-        (ExprOp::Zero, _) => panic!("{} stream rate expression is empty", error_prefix),
+        (ExprOp::None, v) => {
+            match v.len() {
+                0 => panic!("{} stream rate expression is empty", error_prefix),
+                // If just a single raw rate, directly generate StreamRate
+                1 => parse_chunk(v[0]),
+                _ => panic!("{} only single raw rate allowed if no operator",
+                            error_prefix)
+            }
+        },
         (eo, v) => generate_streamrate(&eo, v),
     }
 }
