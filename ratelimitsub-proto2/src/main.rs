@@ -1,7 +1,6 @@
 use std::env;
-mod streamrate;
 mod parse;
-
+mod streamrate;
 
 // Test string: (|| 10/5 12/4) <: (. (|| 300/50 40/10 50/5) 2/1)
 // Test string:
@@ -12,6 +11,6 @@ fn main() {
     if streamrate::stream_sub(&left, &right) {
         println!("{} is true", args[1])
     } else {
-         println!("{} is false", args[1])
+        println!("{} is false", args[1])
     }
 }

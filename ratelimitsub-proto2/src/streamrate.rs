@@ -204,6 +204,13 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, s: &Solver) -> Vec<SymRate> {
                     s.assert(cross_sym_n.gt(0));
                     s.assert(cross_sym_t.gt(0));
                     // Add constraints for crossover period
+                    // TODO: This needs to be an "or" across all possible pairs?
+                    // I actually don't know if this is totally right, since we
+                    // need to test every possible pair (not just if one pair
+                    // works). This may require a much bigger rewriting, since
+                    // the most straightforward way may be to just pass it back
+                    // into our BARate case analysis again (to properly handle
+                    // the logical conjunction that gets created here).
                     s.assert(cross_sym_n.eq(l_sym_n + r_sym_n));
                     s.assert(cross_sym_t.eq(l_sym_t + r_sym_t));
                     // More imperative stuff that I don't like, but I don't know
@@ -240,6 +247,16 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel, s: &Solver) -> Vec<SymRate> {
                 }
             }
             return_sym
+            // TODO: 2 possible problems --- the symbolic summed rates don't
+            // seem to be added to our constraint list (see rate_sub_symbolize)
+            // below. Also, it's possible that we're unnecessarily constraining
+            // the window size to be the same across all necessary pairings of
+            // sub/supertype, which should not be the case (they should be able
+            // to choose independently).
+            // NOTE: OK, the first problem isn't happening. The second one
+            // is thought, I think.
+            // TODO: It may also help to eagerly deduplicate the set of possible
+            // window sizes.
         }
         _ => {
             // This is where I wish we could prove this statement in the code
@@ -317,11 +334,13 @@ fn rate_sub_symbolize(rate1: &BARate, rate2: &BARate, s: &Solver) {
 }
 
 // Construct SMT constraints and solve.
+// TODO: I think there's something wrong here...with concatenate. Need a separate
+// check for each possible pair of implications, not one big one.
 fn rate_sub_solve(rate1: &BARate, rate2: &BARate) -> bool {
     let solver = Solver::new();
     rate_sub_symbolize(rate1, rate2, &solver);
-    // let asserts = solver.get_assertions();
-    // dbg!(asserts);
+    let asserts = solver.get_assertions();
+    dbg!(asserts);
     match solver.check() {
         // TODO: It would be nice to produce a model in this case.
         SatResult::Sat => {
@@ -331,7 +350,7 @@ fn rate_sub_solve(rate1: &BARate, rate2: &BARate) -> bool {
             // println!("printing model!");
             // dbg!(model);
             true
-        },
+        }
         SatResult::Unsat | SatResult::Unknown => false,
     }
 }
@@ -615,12 +634,10 @@ mod tests {
 
     #[test]
     fn test_convert_to_ba() {
-        let sr1 = StreamRate::Raw(
-            Rate {
-                events: 10,
-                window: 12,
-            }
-        );
+        let sr1 = StreamRate::Raw(Rate {
+            events: 10,
+            window: 12,
+        });
         assert_eq!(
             convert_to_ba(&sr1, &SubRel::Lhs),
             BARate::Raw(Rate {
@@ -637,194 +654,146 @@ mod tests {
         );
         let sr2 = StreamRate::Concat(
             Box::new(StreamRate::Par(
-                Box::new(StreamRate::Raw(
-                    Rate {
-                        events: 5,
-                        window: 10,
-                    }
-                )),
-                Box::new(StreamRate::Raw(
-                    Rate {
-                        events: 100,
-                        window: 40,
-                    }
-                ))
+                Box::new(StreamRate::Raw(Rate {
+                    events: 5,
+                    window: 10,
+                })),
+                Box::new(StreamRate::Raw(Rate {
+                    events: 100,
+                    window: 40,
+                })),
             )),
             Box::new(StreamRate::Par(
-                Box::new(StreamRate::Raw(
-                    Rate {
-                        events: 7,
-                        window: 8,
-                    }
-                )),
-                Box::new(StreamRate::Raw(
-                    Rate {
-                        events: 42,
-                        window: 88,
-                    }
-                ))
-            ))
+                Box::new(StreamRate::Raw(Rate {
+                    events: 7,
+                    window: 8,
+                })),
+                Box::new(StreamRate::Raw(Rate {
+                    events: 42,
+                    window: 88,
+                })),
+            )),
         );
         assert_eq!(
             convert_to_ba(&sr2, &SubRel::Lhs),
             BARate::LConcat(
                 Box::new(BARate::Par(
-                    Box::new(BARate::Raw(
-                        Rate {
-                            events: 5,
-                            window: 10,
-                        }
-                    )),
-                    Box::new(BARate::Raw(
-                        Rate {
-                            events: 100,
-                            window: 40,
-                        }
-                    )
-                ))),
+                    Box::new(BARate::Raw(Rate {
+                        events: 5,
+                        window: 10,
+                    })),
+                    Box::new(BARate::Raw(Rate {
+                        events: 100,
+                        window: 40,
+                    }))
+                )),
                 Box::new(BARate::Par(
-                    Box::new(BARate::Raw(
-                        Rate {
-                            events: 7,
-                            window: 8,
-                        }
-                    )),
-                    Box::new(BARate::Raw(
-                        Rate {
-                            events: 42,
-                            window: 88,
-                        }
-                    )
-                )))
+                    Box::new(BARate::Raw(Rate {
+                        events: 7,
+                        window: 8,
+                    })),
+                    Box::new(BARate::Raw(Rate {
+                        events: 42,
+                        window: 88,
+                    }))
+                ))
             )
         );
         assert_eq!(
             convert_to_ba(&sr2, &SubRel::Rhs),
             BARate::And(
                 Box::new(BARate::Par(
-                    Box::new(BARate::Raw(
-                        Rate {
-                            events: 5,
-                            window: 10,
-                        }
-                    )),
-                    Box::new(BARate::Raw(
-                        Rate {
-                            events: 100,
-                            window: 40,
-                        }
-                    )
-                ))),
+                    Box::new(BARate::Raw(Rate {
+                        events: 5,
+                        window: 10,
+                    })),
+                    Box::new(BARate::Raw(Rate {
+                        events: 100,
+                        window: 40,
+                    }))
+                )),
                 Box::new(BARate::Par(
-                    Box::new(BARate::Raw(
-                        Rate {
-                            events: 7,
-                            window: 8,
-                        }
-                    )),
-                    Box::new(BARate::Raw(
-                        Rate {
-                            events: 42,
-                            window: 88,
-                        }
-                    )
-                )))
+                    Box::new(BARate::Raw(Rate {
+                        events: 7,
+                        window: 8,
+                    })),
+                    Box::new(BARate::Raw(Rate {
+                        events: 42,
+                        window: 88,
+                    }))
+                ))
             )
         );
         let sr3 = StreamRate::Sum(
             Box::new(StreamRate::Concat(
-                Box::new(StreamRate::Raw(
-                    Rate {
-                        events: 5,
-                        window: 10,
-                    }
-                )),
-                Box::new(StreamRate::Raw(
-                    Rate {
-                        events: 100,
-                        window: 40,
-                    }
-                ))
+                Box::new(StreamRate::Raw(Rate {
+                    events: 5,
+                    window: 10,
+                })),
+                Box::new(StreamRate::Raw(Rate {
+                    events: 100,
+                    window: 40,
+                })),
             )),
             Box::new(StreamRate::Par(
-                Box::new(StreamRate::Raw(
-                    Rate {
-                        events: 7,
-                        window: 8,
-                    }
-                )),
-                Box::new(StreamRate::Raw(
-                    Rate {
-                        events: 42,
-                        window: 88,
-                    }
-                ))
-            ))
+                Box::new(StreamRate::Raw(Rate {
+                    events: 7,
+                    window: 8,
+                })),
+                Box::new(StreamRate::Raw(Rate {
+                    events: 42,
+                    window: 88,
+                })),
+            )),
         );
         assert_eq!(
             convert_to_ba(&sr3, &SubRel::Lhs),
             BARate::Or(
                 Box::new(BARate::LConcat(
-                    Box::new(BARate::Raw(
-                        Rate {
-                            events: 5,
-                            window: 10,
-                        }
-                    )),
-                    Box::new(BARate::Raw(
-                        Rate {
-                            events: 100,
-                            window: 40,
-                        }
-                    )
-                ))),
+                    Box::new(BARate::Raw(Rate {
+                        events: 5,
+                        window: 10,
+                    })),
+                    Box::new(BARate::Raw(Rate {
+                        events: 100,
+                        window: 40,
+                    }))
+                )),
                 Box::new(BARate::Par(
-                    Box::new(BARate::Raw(
-                        Rate {
-                            events: 7,
-                            window: 8,
-                        }
-                    )),
-                    Box::new(BARate::Raw(
-                        Rate {
-                            events: 42,
-                            window: 88,
-                        }
-                    )
-                )))
+                    Box::new(BARate::Raw(Rate {
+                        events: 7,
+                        window: 8,
+                    })),
+                    Box::new(BARate::Raw(Rate {
+                        events: 42,
+                        window: 88,
+                    }))
+                ))
             )
         );
         assert_eq!(
             convert_to_ba(&sr3, &SubRel::Rhs),
             BARate::And(
                 Box::new(BARate::And(
-                    Box::new(BARate::Raw(
-                        Rate {
-                            events: 5,
-                            window: 10,
-                        }
-                    )),
-                    Box::new(BARate::Raw(
-                        Rate {
-                            events: 100,
-                            window: 40,
-                        }
-                    )
-                ))),
+                    Box::new(BARate::Raw(Rate {
+                        events: 5,
+                        window: 10,
+                    })),
+                    Box::new(BARate::Raw(Rate {
+                        events: 100,
+                        window: 40,
+                    }))
+                )),
                 Box::new(BARate::Par(
-                    Box::new(BARate::Raw(
-                        Rate {
-                            events: 7,
-                            window: 8,
-                        }
-                    )),
-                    Box::new(BARate::Raw(
-                        Rate {
-                            events: 42,
-                            window: 88,
-                        }
-                    )
-                )))
+                    Box::new(BARate::Raw(Rate {
+                        events: 7,
+                        window: 8,
+                    })),
+                    Box::new(BARate::Raw(Rate {
+                        events: 42,
+                        window: 88,
+                    }))
+                ))
             )
         );
     }
@@ -832,156 +801,106 @@ mod tests {
     #[test]
     fn test_subtyping_constraint_generation() {
         let sub1_left = StreamRate::Par(
-            Box::new(StreamRate::Raw(
-                Rate {
-                    events: 5,
-                    window: 10,
-                }
-            )),
-            Box::new(StreamRate::Raw(
-                Rate {
-                    events: 7,
-                    window: 5,
-                }
-            ))
+            Box::new(StreamRate::Raw(Rate {
+                events: 5,
+                window: 10,
+            })),
+            Box::new(StreamRate::Raw(Rate {
+                events: 7,
+                window: 5,
+            })),
         );
         let sub1_right = StreamRate::Par(
-            Box::new(StreamRate::Raw(
-                Rate {
-                    events: 38,
-                    window: 30,
-                }
-            )),
-            Box::new(StreamRate::Raw(
-                Rate {
-                    events: 2,
-                    window: 1,
-                }
-            ))
+            Box::new(StreamRate::Raw(Rate {
+                events: 38,
+                window: 30,
+            })),
+            Box::new(StreamRate::Raw(Rate {
+                events: 2,
+                window: 1,
+            })),
         );
-        assert_eq!(
-            stream_sub(&sub1_left, &sub1_right),
-            false
-        );
+        assert_eq!(stream_sub(&sub1_left, &sub1_right), false);
         let sub2_left = StreamRate::Par(
-            Box::new(StreamRate::Raw(
-                Rate {
-                    events: 10,
-                    window: 3,
-                }
-            )),
-            Box::new(StreamRate::Raw(
-                Rate {
-                    events: 12,
-                    window: 5,
-                }
-            ))
+            Box::new(StreamRate::Raw(Rate {
+                events: 10,
+                window: 3,
+            })),
+            Box::new(StreamRate::Raw(Rate {
+                events: 12,
+                window: 5,
+            })),
         );
         let sub2_right = StreamRate::Par(
-            Box::new(StreamRate::Raw(
-                Rate {
-                    events: 40,
-                    window: 4,
-                }
-            )),
-            Box::new(StreamRate::Raw(
-                Rate {
-                    events: 10,
-                    window: 5,
-                }
-            ))
+            Box::new(StreamRate::Raw(Rate {
+                events: 40,
+                window: 4,
+            })),
+            Box::new(StreamRate::Raw(Rate {
+                events: 10,
+                window: 5,
+            })),
         );
-        assert_eq!(
-            stream_sub(&sub2_left, &sub2_right),
-            true
-        );
+        assert_eq!(stream_sub(&sub2_left, &sub2_right), true);
         let sub3_left = StreamRate::Par(
-            Box::new(StreamRate::Raw(
-                Rate {
-                    events: 5,
-                    window: 10,
-                }
-            )),
-            Box::new(StreamRate::Raw(
-                Rate {
-                    events: 7,
-                    window: 5,
-                }
-            ))
+            Box::new(StreamRate::Raw(Rate {
+                events: 5,
+                window: 10,
+            })),
+            Box::new(StreamRate::Raw(Rate {
+                events: 7,
+                window: 5,
+            })),
         );
         let sub3_right = StreamRate::Par(
-            Box::new(StreamRate::Raw(
-                Rate {
-                    events: 38000500,
-                    window: 100000,
-                }
-            )),
-            Box::new(StreamRate::Raw(
-                Rate {
-                    events: 250940989,
-                    window: 85823490,
-                }
-            ))
+            Box::new(StreamRate::Raw(Rate {
+                events: 38000500,
+                window: 100000,
+            })),
+            Box::new(StreamRate::Raw(Rate {
+                events: 250940989,
+                window: 85823490,
+            })),
         );
-        assert_eq!(
-            stream_sub(&sub3_left, &sub3_right),
-            true
-        );
+        assert_eq!(stream_sub(&sub3_left, &sub3_right), true);
         let sub4_left = StreamRate::Concat(
             Box::new(StreamRate::Par(
-                Box::new(StreamRate::Raw(
-                    Rate {
-                        events: 5,
-                        window: 10,
-                    }
-                )),
-                Box::new(StreamRate::Raw(
-                    Rate {
-                        events: 7,
-                        window: 5,
-                    }
-                ))
+                Box::new(StreamRate::Raw(Rate {
+                    events: 5,
+                    window: 10,
+                })),
+                Box::new(StreamRate::Raw(Rate {
+                    events: 7,
+                    window: 5,
+                })),
             )),
             Box::new(StreamRate::Par(
-                Box::new(StreamRate::Raw(
-                    Rate {
-                        events: 60,
-                        window: 200,
-                    }
-                )),
+                Box::new(StreamRate::Raw(Rate {
+                    events: 60,
+                    window: 200,
+                })),
                 Box::new(StreamRate::Par(
-                    Box::new(StreamRate::Raw(
-                        Rate {
-                            events: 10,
-                            window: 80,
-                        }
-                    )),
-                    Box::new(StreamRate::Raw(
-                        Rate {
-                            events: 42,
-                            window: 30,
-                        }
-                    ))
-                ))
-            ))
+                    Box::new(StreamRate::Raw(Rate {
+                        events: 10,
+                        window: 80,
+                    })),
+                    Box::new(StreamRate::Raw(Rate {
+                        events: 42,
+                        window: 30,
+                    })),
+                )),
+            )),
         );
         let sub4_right = StreamRate::Par(
-            Box::new(StreamRate::Raw(
-                Rate {
-                    events: 600,
-                    window: 10000,
-                }
-            )),
-            Box::new(StreamRate::Raw(
-                Rate {
-                    events: 1000,
-                    window: 9000,
-                }
-            ))
+            Box::new(StreamRate::Raw(Rate {
+                events: 600,
+                window: 10000,
+            })),
+            Box::new(StreamRate::Raw(Rate {
+                events: 1000,
+                window: 9000,
+            })),
         );
-        assert_eq!(
-            stream_sub(&sub4_left, &sub4_right),
-            false
-        );
+        assert_eq!(stream_sub(&sub4_left, &sub4_right), false);
     }
 }
