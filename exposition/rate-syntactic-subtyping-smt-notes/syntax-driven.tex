@@ -52,7 +52,7 @@
 %% Your stuff here
 \section{Some motivation}
 \subsection{Old problems}
-A big problem with our previous syntactic approach was that it lacked nice algebraic properties. Another problem was that it was simply poorly designed, i.e. the initial formulation didn't take into account some basic things like (a) multiple rate type refinements on a single stream, (b) the fact that the stream types calculus allowed rate type refinements to be arbitrarily nested, and so were not all going to be ``raw'' rates of the form ${@n/t}$, where $n$ and $t$ are some natural numbers (or positive reals—this point is still not totally well-considered), or (c) the fact that rate refinements could have different window sizes (i.e. the older rule for uniform concatenation assumed the same window size for both streams and just added the events, see below).
+A big problem with our previous syntactic approach was that it lacked nice algebraic properties, such as compostionality. Another problem was that it was simply poorly designed, i.e. the initial formulation didn't take into account some basic things like (a) multiple rate type refinements on a single stream, (b) the fact that the stream types calculus allowed rate type refinements to be arbitrarily nested, and so were not all going to be ``raw'' rates of the form ${@n/t}$, where $n$ and $t$ are some natural numbers (or positive reals—this point is still not totally well-considered), or (c) the fact that rate refinements could have different window sizes (i.e. the older rule for uniform concatenation assumed the same window size for both streams and just added the events, see below).
 \begin{mathpar}
   \inferrule [s-uniform-concat-factor]{ }{\rr{S}{n_1}{t} \bullet \rr{T}{n_2}{t} \subtype \rr{(S \bullet T)}{(n_1+n_2)}{t}} \and
 \end{mathpar}
@@ -70,8 +70,31 @@ This approach is still promising, and worth investigating much further, but ther
 Given these potential efficiency problems with an automata-based approach, perhaps we should turn back temporarily to our old syntax-driven, typing rule style? I think there is a bit more juice there worth squeezing, particularly since it promises to be more efficient. The automata stuff is still important though, since I think it will give us a semantic basis to ground our syntactic typing rules.
 
 \section{A boolean-ish algebra for rate types}
+We define a core boolean-ish algebra for rate types, which we claim our structural subtyping rules and algebraic rewriting rules will reduce all rate types involved in subtyping entailments to. Here is the core rate type:
+$$R \mathrel{::=} @n/t\ |\ @(n1/t1 \parallel n2/t2 \parallel \ldots)\ |\ R \lor R\ |\ R \land R\ |\ \top\ |\ \bot $$
+Note that we also consider Parallel rates consisting only of ``raw'' rates to be irreducible here. Indeed, the idea is that we save all information about ``raw'' Parallel rates and propagate it until subtype checking time—the reasoning for this is that the subtype/entailment checking procedure for Parallel is not associative or compositional, so abstracting earlier in the process will lose possibly important information.
+
+\todo{Add an example here to show how our abstraction procedure for Parallel is not associative or compositional.}
+
+Treating the first two symbols in our type ($@n/t$ and $@(n1/t1 \parallel n2/t2 \parallel \ldots)$) as base cases, this algebra is just a normal boolean algebra (although we don't have or need negation). For example, we can rewrite $(R_1 \lor R_2) \land R_3$ as $(R_1 \land R_3) \lor (R_2 \land R_3)$ (i.e. all the expected distributivity properties apply).
+
+The expected rules for entailment (in boolean algebra) also apply, i.e for $R_1 \land R_2 \implies R_3$ is equivalent to $R_1 \implies R_3 \land R_2 \implies R_3$ (using the $\implies$ operator here to denote entailment).
 \section{Structural subtyping rules}
+The basic subtyping rules for ``raw'' (\textit{uniform}) rate types, i.e. types of form $@n/t$, are as follows.
+\begin{mathpar}
+  \inferrule [raw-rate-sub]{(t_2 < t_1 \land n_1 \leq n_2) \lor (t_1 \leq t_2 \land n_1 \leq n_2/(\ceil{t_2/t_1}))}{@n_1/t_1 \leq @n_2/t_2} \\
+\end{mathpar}
+\begin{mathpar}
+  \inferrule [raw-rate-sub]{(t_2 < t_1 \land n_1 \leq n_2) \lor (t_1 \leq t_2 \land n_1 \leq n_2/(\ceil{t_2/t_1}))}{@n_1/t_1 \leq @n_2/t_2} \\
+\end{mathpar}
 \section{Algebraic rewriting rules}
+;; - heuristic/ad-hoc rate limit implementation writeup
+;; --- does the abstraction rule for "raw" rate concatenation and star make sense?
+;; --- does the rule for (R1 || R2) . R3 <: or equivalent to (R1 . R3) || (R2 . R3) make sense? (No, it does not btw. This would effectively ``double'' R3, if you think about it.)
+;; --- do we need this rule anyway? does it really simplify the SMT constraints that much for subtype checking?
+;; ---- only need to do that when this kind of thing is on the LHS of a subtype relation
+;; ---- on RHS, we can just use the structural rules for concatenation
+;; --- go over conjectures on "raw" parallel types, try to prove?
 \subsection{Reduction to a normal form}
 \section{Checking entailment}
 \subsection{Checking entailment with parallel sums}

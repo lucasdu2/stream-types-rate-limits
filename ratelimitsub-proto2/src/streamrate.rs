@@ -396,8 +396,8 @@ fn rate_sub_solve(rate1: &BARate, rate2: &BARate) -> bool {
         for c in cs.iter() {
             solver.assert(c);
         };
-        // let asserts = solver.get_assertions();
-        // dbg!(asserts);
+        let asserts = solver.get_assertions();
+        dbg!(asserts);
         match solver.check() {
             SatResult::Sat => {
                 // NOTE: Produce a model in this case for debugging.
@@ -452,6 +452,7 @@ fn ba_rate_sub(ba_rate1: &BARate, ba_rate2: &BARate) -> bool {
 fn convert_to_ba(sr: &StreamRate, rel: &SubRel) -> BARate {
     match sr {
         StreamRate::Raw(r) => BARate::Raw(r.clone()),
+        // TODO: I actually think this should be And for both...
         StreamRate::Sum(box_sr1, box_sr2) => match rel {
             SubRel::Lhs => BARate::Or(
                 Box::new(convert_to_ba(box_sr1, rel)),

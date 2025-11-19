@@ -1,0 +1,126 @@
+\documentclass[letterpaper,10pt]{article}
+\usepackage[margin=2in]{geometry}  % Adjust margin here
+\usepackage{xcolor}
+\usepackage{amsthm}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{mathtools}
+\usepackage{stmaryrd}
+
+\newcommand{\todo}[1]{\textcolor{red}{\textbf{\texttt{TODO:}} {#1}}}
+\newcommand{\bnfdef}{\mathrel{::=}}
+\newcommand{\bnfcase}{\ |\ }
+\DeclarePairedDelimiter\Brackets{\llbracket}{\rrbracket}
+
+% theorem formatting
+\newtheorem{theorem}{Theorem}
+\newtheorem{corollary}{Corollary}[theorem]
+\newtheorem{lemma}[theorem]{Lemma}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+
+\theoremstyle{remark}
+\newtheorem*{remark}{Remark}
+
+
+\title{\textbf{Theory of stream rates} \\
+\large Syntax, semantics, Kleene-like algebra}
+\author{Lucas Du}
+\date{November 17, 2025}
+
+\begin{document}
+\maketitle
+\section{Introduction}
+I will attempt to begin formalizing a theory of stream rates, beginning with a proposed syntax, continuing with a set-based semantics, and finally proposing a Kleene-like algebra for equational reasoning, which I will prove correct with respect to the semantics.
+
+\section{Syntax}
+\begin{definition}
+  A stream rate expression is defined by the following grammar:
+  $$\theta \bnfdef @n/t \bnfcase \theta \cdot \theta \bnfcase  \theta \parallel \theta \bnfcase \theta + \theta \bnfcase \theta^* \bnfcase \theta \land \theta \bnfcase \top \bnfcase \bot \bnfcase \epsilon \bnfcase \#n \bnfcase \overline{@}n/t$$
+\end{definition}
+I will quickly give some notes and some hints at the semantics, which will be expanded upon in the next section.
+\begin{itemize}
+\item $n$ is a non-negative integer. $t$ is a positive real.
+\item For both $@n/t$ and $\overline{@}n/t$, we require that these denote stream timelines of length $\geq t$. The definition of stream timelines and length will be given below, when I discuss semantics.
+\item $\#n$ has no constraint on length.
+\end{itemize}
+
+\section{Set Semantics}
+I will now give a semantics to the syntax. First, we define a notion of \textit{stream timeline}.
+\begin{definition}
+  A stream timeline (which we can refer to using one of $S,T,U,V$) is a \textit{finite multiset} of \textit{non-negative real numbers}.
+  \begin{itemize}
+    \item The \textbf{size} of a stream timeline $S$ is the \textit{number of elements} in $S$. This can be seen as the result of evaluating the function \texttt{size} on some stream timeline $S$.
+    \item The \textbf{length} of a stream timeline $S$ is the \textit{maximum element} of $S$ if the size of $S$ is $>0$; if the $S$ is empty (the size of $S$ is 0), then length is $0$. This can be seen as the result of evaluating the function \texttt{length} on some stream timeline $S$.
+  \end{itemize}
+\end{definition}
+\begin{definition}
+  A \textit{discrete} stream timeline is a stream timeline where all elements are \textit{non-negative integers}.
+\end{definition}
+\begin{definition}
+  $\Theta$ is the set of all possible stream timelines.
+\end{definition}
+Equipped with these definitions, I will now give a recursive definition to each of the syntactic constructs. Something to note right off the bat: these semantics are all denotationally defined as \textit{possibly infinite sets of stream timelines}.
+\subsection{$\Brackets{@n/t}$} I start by defining a function \texttt{count} that operates on stream timelines.
+\begin{definition}[\texttt{count}]
+  Let \texttt{count(S, start, end)}, where \texttt{start}, \texttt{end} are non-negative real numbers, \texttt{end} $\geq$ \texttt{start}, and \texttt{S} is a stream timeline. \texttt{count(start, end, S)} is then the \textbf{size} of the stream timeline defined by: $$\{e\ |\ e \in \texttt{S} \land \texttt{start} \leq e < \texttt{end}\}$$
+\end{definition}
+$\Brackets{@n/t}$ is then defined as the set of all stream timelines $S$ for which the following predicate is true (note the encoding of the requirement that the stream length is $\geq t$):
+$$\forall e \in S, \texttt{count(S, e, e + t)} \leq n \land \texttt{length(S)} \geq t$$
+
+Note the slight abuse of font style: $S$ and \texttt{S} both refer to the same stream timeline and the difference in font style is irrelevant.
+
+\subsection{$\Brackets{\theta_1 \cdot \theta_2}$} I again start by defining a function, this time called \texttt{shift}, that operates on stream timelines.
+\begin{definition}[\texttt{shift}]
+  Let \texttt{shift(S, offset)}, where \texttt{offset} is a non-negative real number and \texttt{S} is a stream timeline, evaluate to the stream timeline:
+  $$\{e + \texttt{offset}\ |\ e \in S\}$$
+\end{definition}
+$\Brackets{\theta_1 \cdot \theta_2}$ is then defined as the following set of stream timelines:
+$$\{S \cup \texttt{shift(T, length(S))}\ |\ S \in \Brackets{\theta_1}, \texttt{T} \in \Brackets{\theta_2}\}$$
+Note again the slight abuse of typography. Also, note that this definition is essentially $\cup$ (set union) mapped over the \textit{Cartesian product} between $\Brackets{\theta_1}$ (which is, as a reminder, a set of stream timelines) and the set resulting from mapping \texttt{shift} over $\Brackets{\theta_2}$.
+
+\subsection{$\Brackets{\theta_1 \parallel \theta_2}$}
+$\Brackets{\theta_1 \parallel \theta_2}$ is defined as the following set of stream timelines:
+$$\{S \cup T\ |\ S \in \Brackets{\theta_1}, T \in \Brackets{\theta_2}\}$$
+
+\subsection{$\Brackets{\theta_1 + \theta_2}$}
+$\Brackets{\theta_1 + \theta_2}$ is defined as the following set of stream timelines:
+$$\Brackets{\theta_1} \cup \Brackets{\theta_2}$$
+
+\subsection{$\Brackets{\theta_1 \land \theta_2}$}
+$\Brackets{\theta_1 \land \theta_2}$ is defined as:
+$$\Brackets{\theta_1} \cap \Brackets{\theta_2}$$
+
+\subsection{$\Brackets{\theta^*}$}
+Intuitively, $\Brackets{\theta^*}$ should be the set of all finite repetitions of members of $\Brackets{\theta}$ (including $0$ repetitions). To make this a bit more precise, notice that this is just unbounded concatenation, including $\epsilon$. Thus, we can recursively define $\Brackets{\theta^*}$ as:
+$$\{\emptyset\} \cup \Brackets{\theta} \cup \Brackets{\theta \cdot \theta} \cup \Brackets{(\theta \cdot \theta) \cdot \theta} \ldots$$
+
+Formally, given the following definitions:
+\begin{align*}
+  \Brackets{\theta^0} &= \{\emptyset\}\\
+  \Brackets{\theta^1} &= \Brackets{\theta}\\
+  \Brackets{\theta^{i+1}} &= \Brackets{\theta^{i}} \cdot \Brackets{\theta}, \forall i \in \mathbb{N}
+\end{align*}
+we define $\Brackets{\theta^*}$ as $\bigcup_{i \geq 0} \Brackets{\theta^i}$.
+
+\subsection{$\Brackets{\top}$}
+$\Brackets{\top}$ is the set of all possible stream timelines. In other words, the set of all multisets of non-negative reals.
+
+\subsection{$\Brackets{\bot}$}
+$\Brackets{\bot}$ is the empty set $\emptyset$.
+
+\subsection{$\Brackets{\epsilon}$}
+$\Brackets{\epsilon}$ is the set consisting of just the empty stream timeline (in other words, an empty multiset): $\{\emptyset\}$
+
+\subsection{$\Brackets{\#n}$}
+$\Brackets{\#n}$ is the set of all stream timelines with size $n$. Perhaps more formally, it is the set of stream timelines defined by:
+$$\{S\ |\ \texttt{size(S)} = n\}$$
+
+\subsection{$\Brackets{\overline{@}n/t}$}
+$\Brackets{\overline{@}n/t}$ is defined as the set of stream timelines $S$ for which the following predicate is true (again, note the encoding of the requirement that the length of $S$ is $\geq t$):
+$$\forall \texttt{i} \in \mathbb{N} \cup \{0\}, \texttt{count(S, i*t, (i+1)*t)} \leq n \land \texttt{length(S)} \geq t$$
+
+\section{Equational Reasoning}
+
+\end{document}
