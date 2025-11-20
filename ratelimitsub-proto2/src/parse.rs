@@ -288,7 +288,7 @@ pub fn parse(full_sub_str: &String) -> (StreamRate, StreamRate) {
         Some(r) => parse_side(&r.trim()),
     };
     // TODO: Remove or comment out after testing.
-    dbg!(left.clone());
-    dbg!(right.clone());
+    // dbg!(left.clone());
+    // dbg!(right.clone());
     (left, right)
 }

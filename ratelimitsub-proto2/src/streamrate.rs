@@ -349,7 +349,7 @@ fn rate_sub_symbolize(rate1: &BARate, rate2: &BARate) -> Vec<Vec<Bool>> {
             all_constraints.extend_from_slice(&l_related_constraints[..]);
             all_constraints.extend_from_slice(&r_related_constraints[..]);
             all_constraints.push(l_sym_t.eq(r_sym_t));
-            // TODO: We don't seem to need this (nor is this correct!)
+            // NOTE: We don't seem to need this (nor is this correct!)
             // Probably has something to do with the presence of summing windows
             // in the LConcat case and the resulting symbolic windows. Anyways,
             // the restriction on window size to seen windows might be sufficient?
@@ -363,7 +363,13 @@ fn rate_sub_symbolize(rate1: &BARate, rate2: &BARate) -> Vec<Vec<Bool>> {
             // Add constraints for possible window sizes --- must be one of
             // seen concrete windows or seen symbolic windows.
             let mut all_seen_concrete_windows = Vec::new();
-            // TODO!: We should deduplicate this Vec for simplicity.
+            // TODO: We should possibly deduplicate this Vec for simplicity.
+            // The fix should be relatively straightforward: just use a HashSet
+            // instead of a Vec for the concrete windows.
+            // NOTE: It is a bit unclear how much this would affect performance,
+            // since the SMT solver should be able to easily unify all the
+            // equivalent equalities, so perhaps the main concern only be with
+            // the time it takes to iterate over the whole Vec.
             all_seen_concrete_windows.extend_from_slice(&l_seen_concrete_windows[..]);
             all_seen_concrete_windows.extend_from_slice(&r_seen_concrete_windows[..]);
             let mut all_seen_symbolic_windows = Vec::new();
@@ -403,15 +409,15 @@ fn rate_sub_solve(rate1: &BARate, rate2: &BARate) -> bool {
         for c in cs.iter() {
             solver.assert(c);
         };
-        let asserts = solver.get_assertions();
-        dbg!(asserts);
+        // let asserts = solver.get_assertions();
+        // dbg!(asserts);
         match solver.check() {
             SatResult::Sat => {
                 // NOTE: Produce a model in this case for debugging.
-                let model = solver.get_model().unwrap();
+                // let model = solver.get_model().unwrap();
                 // println!("printing model!");
-                dbg!(model);
-                continue
+                // dbg!(model);
+                // continue
             }
             // TODO: Would also probably be nice to produce some kind of unsat core
             // for debugging purposes (i.e. for the user, which rates were the
