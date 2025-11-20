@@ -51,8 +51,8 @@ I will now give a semantics to the syntax. First, we define a notion of \textit{
 \begin{definition}
   A stream timeline (which we can refer to using one of $S,T,U,V$) is a \textit{finite multiset} of \textit{non-negative real numbers}.
   \begin{itemize}
-    \item The \textbf{size} of a stream timeline $S$ is the \textit{number of elements} in $S$. This can be seen as the result of evaluating the function \texttt{size} on some stream timeline $S$.
-    \item The \textbf{length} of a stream timeline $S$ is the \textit{maximum element} of $S$ if the size of $S$ is $>0$; if the $S$ is empty (the size of $S$ is 0), then length is $0$. This can be seen as the result of evaluating the function \texttt{length} on some stream timeline $S$.
+    \item The \textbf{size} of a stream timeline $S$ is the \textit{number of elements} in $S$. We denote the size of a stream timeline $S$ by \texttt{size(S)}.
+    \item The \textbf{length} of a stream timeline $S$ is the \textit{maximum element} of $S$ if the size of $S$ is $>0$; if the $S$ is empty (the size of $S$ is 0), then length is $0$. We denote the length of a stream timeline $S$ by \texttt{length(S)}.
   \end{itemize}
 \end{definition}
 \begin{definition}
@@ -94,7 +94,7 @@ $$\Brackets{\theta_1} \cap \Brackets{\theta_2}$$
 
 \subsection{$\Brackets{\theta^*}$}
 Intuitively, $\Brackets{\theta^*}$ should be the set of all finite repetitions of members of $\Brackets{\theta}$ (including $0$ repetitions). To make this a bit more precise, notice that this is just unbounded concatenation, including $\epsilon$. Thus, we can recursively define $\Brackets{\theta^*}$ as:
-$$\{\emptyset\} \cup \Brackets{\theta} \cup \Brackets{\theta \cdot \theta} \cup \Brackets{(\theta \cdot \theta) \cdot \theta} \ldots$$
+$$\epsilon \cup \Brackets{\theta} \cup \Brackets{\theta \cdot \theta} \cup \Brackets{(\theta \cdot \theta) \cdot \theta} \ldots$$
 
 Formally, given the following definitions:
 \begin{align*}
@@ -111,7 +111,7 @@ $\Brackets{\top}$ is the set of all possible stream timelines. In other words, t
 $\Brackets{\bot}$ is the empty set $\emptyset$.
 
 \subsection{$\Brackets{\epsilon}$}
-$\Brackets{\epsilon}$ is the set consisting of just the empty stream timeline (in other words, an empty multiset): $\{\emptyset\}$
+$\Brackets{\epsilon}$ is the set consisting of just the empty stream timeline (in other words, the set containing just the empty multiset): $\{\emptyset\}$
 
 \subsection{$\Brackets{\#n}$}
 $\Brackets{\#n}$ is the set of all stream timelines with size $n$. Perhaps more formally, it is the set of stream timelines defined by:
