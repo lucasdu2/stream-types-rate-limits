@@ -93,14 +93,14 @@ fn rate_symbolize(rate: &BARate, rel: &SubRel) -> Vec<SymRate> {
                 // be subtly wrong.
                 SubRel::Lhs => {
                     constraints.push((sym_raw_t.le(&t)).implies(sym_raw_n.eq(&n)));
-                    constraints.push((sym_raw_t.ge(&t)).implies(((&sym_raw_t % &t).eq(0)).ite(
+                    constraints.push((sym_raw_t.gt(&t)).implies(((&sym_raw_t % &t).eq(0)).ite(
                         &sym_raw_n.eq(&n * (&sym_raw_t / &t)),
                         &sym_raw_n.eq(&n * (&sym_raw_t / &t) + 1),
                     )));
                 }
                 SubRel::Rhs => {
                     constraints.push((sym_raw_t.ge(&t)).implies(sym_raw_n.eq(&n)));
-                    constraints.push((sym_raw_t.le(&t)).implies(((&t % &sym_raw_t).eq(0)).ite(
+                    constraints.push((sym_raw_t.lt(&t)).implies(((&t % &sym_raw_t).eq(0)).ite(
                         &(((&n % (&t / &sym_raw_t)).eq(0)).ite(
                             &sym_raw_n.eq(&n / (&t / &sym_raw_t)),
                             &sym_raw_n.eq((&n / (&t / &sym_raw_t)) + 1),
@@ -349,14 +349,21 @@ fn rate_sub_symbolize(rate1: &BARate, rate2: &BARate) -> Vec<Vec<Bool>> {
             all_constraints.extend_from_slice(&l_related_constraints[..]);
             all_constraints.extend_from_slice(&r_related_constraints[..]);
             all_constraints.push(l_sym_t.eq(r_sym_t));
-            let overall_max_window = max(*l_max_window, *r_max_window);
-            let overall_min_window = min(*l_min_window, *r_min_window);
-            all_constraints.push(l_sym_t.le(Int::from_u64(overall_max_window as u64)));
-            all_constraints.push(l_sym_t.ge(Int::from_u64(overall_min_window as u64)));
+            // TODO: We don't seem to need this (nor is this correct!)
+            // Probably has something to do with the presence of summing windows
+            // in the LConcat case and the resulting symbolic windows. Anyways,
+            // the restriction on window size to seen windows might be sufficient?
+            // You may also still be able to restrict the range by adding concrete
+            // sums to the list, although this may actually also not be true...
+            let _overall_max_window = max(*l_max_window, *r_max_window);
+            let _overall_min_window = min(*l_min_window, *r_min_window);
+            // all_constraints.push(l_sym_t.le(Int::from_u64(overall_max_window as u64)));
+            // all_constraints.push(l_sym_t.ge(Int::from_u64(overall_min_window as u64)));
             all_constraints.push(l_sym_n.le(r_sym_n));
             // Add constraints for possible window sizes --- must be one of
             // seen concrete windows or seen symbolic windows.
             let mut all_seen_concrete_windows = Vec::new();
+            // TODO!: We should deduplicate this Vec for simplicity.
             all_seen_concrete_windows.extend_from_slice(&l_seen_concrete_windows[..]);
             all_seen_concrete_windows.extend_from_slice(&r_seen_concrete_windows[..]);
             let mut all_seen_symbolic_windows = Vec::new();
@@ -401,9 +408,9 @@ fn rate_sub_solve(rate1: &BARate, rate2: &BARate) -> bool {
         match solver.check() {
             SatResult::Sat => {
                 // NOTE: Produce a model in this case for debugging.
-                // let model = solver.get_model().unwrap();
+                let model = solver.get_model().unwrap();
                 // println!("printing model!");
-                // dbg!(model);
+                dbg!(model);
                 continue
             }
             // TODO: Would also probably be nice to produce some kind of unsat core
@@ -435,7 +442,9 @@ fn rate_sub(rate1: &BARate, rate2: &BARate) -> bool {
                 *e1 <= bound
             }
         }
-        (r1, r2) => rate_sub_solve(r1, r2),
+        (r1, r2) => {
+            rate_sub_solve(r1, r2)
+        },
     }
 }
 
